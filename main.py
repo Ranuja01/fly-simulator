@@ -234,7 +234,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--config", type=str, default=None,
                         help="Path to a JSON config file with partial overrides.")
     parser.add_argument("--connectome", type=str, default=None,
-                        choices=["mock12", "synthetic120", "flywire"],
+                        choices=["mock12", "synthetic120", "flywire", "neuprint"],
                         help="Which connectome to simulate. 'flywire' loads real Codex "
                              "tables from FLYSIM_CACHE_DIR; see docs/CONNECTOME_ACCESS.md.")
     parser.add_argument("--flywire-dir", type=str, default=None, metavar="PATH",
@@ -333,6 +333,13 @@ def main(argv: list[str] | None = None) -> int:
             "hops": args.flywire_hops,
             "max_neurons": args.flywire_max_neurons,
         }
+        if args.flywire_pa is not None:
+            connectome_kwargs["pa_per_synapse"] = args.flywire_pa
+    elif config.connectome == "neuprint":
+        # The male CNS: brain plus ventral nerve cord, so the escape pathway reaches
+        # motor neurons rather than terminating at the neck.
+        connectome_kwargs = {"hops": args.flywire_hops,
+                             "max_neurons": args.flywire_max_neurons}
         if args.flywire_pa is not None:
             connectome_kwargs["pa_per_synapse"] = args.flywire_pa
 

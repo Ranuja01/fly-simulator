@@ -282,6 +282,11 @@ def build(name: str, seed: int = 0, **kwargs) -> Connectome:
 
         return build_flywire(**kwargs)
 
+    if name == "neuprint":
+        from flysim.brain.neuprint_source import build_neuprint
+
+        return build_neuprint(**kwargs)
+
     try:
         builder = BUILDERS[name]
     except KeyError:
