@@ -99,25 +99,37 @@ class LoomingEncoder(BaseSensoryEncoder):
         # Angular subtense, and its rate of change: the actual looming cue.
         theta = 2.0 * float(np.arctan(obs.threat_size / (2.0 * distance)))
 
-        raw_theta_dot = 0.0
-        if self._prev_theta is not None and self._prev_t is not None:
-            dt = obs.t - self._prev_t
-            if dt > 0.0:
-                raw_theta_dot = (theta - self._prev_theta) / dt
-        self._prev_theta = theta
-        self._prev_t = obs.t
+        # Expansion rate, computed ANALYTICALLY from the closing speed rather than by
+        # differencing theta between frames.
+        #
+        #   theta      = 2 arctan(l / 2d)
+        #   dtheta/dd  = -4l / (4d^2 + l^2)
+        #   theta_dot  = dtheta/dd * d_dot,  and d_dot = -closing_speed
+        #              = 4 * l * closing_speed / (4d^2 + l^2)
+        #
+        # Finite differencing looked equivalent and was not. The runner takes several
+        # simulation steps per rendered frame while a mouse-driven threat updates only
+        # once per frame, so the difference put all of the motion into one sample and left
+        # the rest at zero: four of every five samples reported no expansion at all, the
+        # sustained drive collapsed to about a fifth of its true value, and the Giant Fiber
+        # never reached threshold. The closing speed is continuous across those substeps
+        # because the environment maintains it, so this form has no such blind spot -- and
+        # it is exact rather than approximate.
+        size = float(obs.threat_size)
+        raw_theta_dot = (
+            4.0 * size * float(obs.closing_speed) / (4.0 * distance**2 + size**2)
+        )
 
-        # Discard discontinuities rather than clamping them. A jump in the threat's
-        # position -- the mouse entering the panel, a teleport, a dropped frame -- is not an
-        # approach. Clamping would still report the maximum possible expansion rate, which
-        # reads as maximally threatening; zero is the honest answer, because a jump carries
-        # no information about whether the object is coming closer.
+        # A teleporting threat still produces a spurious spike through the closing speed,
+        # so the discontinuity guard stays. Zero is the honest answer for a jump: it carries
+        # no information about whether the object is approaching, and clamping would instead
+        # report the maximum possible expansion rate, which reads as maximally threatening.
         discontinuity = abs(raw_theta_dot) > p.max_expansion_rate_rad_s
         if discontinuity:
             raw_theta_dot = 0.0
 
-        # Smooth before use: a finite difference between frames carries every jitter in
-        # the threat's position straight into the neurons.
+        # Light smoothing. The analytic form is already continuous across substeps, so this
+        # only takes the edge off hand tremor rather than reconstructing a signal.
         self._theta_dot = (
             p.theta_dot_smoothing * self._theta_dot
             + (1.0 - p.theta_dot_smoothing) * raw_theta_dot
