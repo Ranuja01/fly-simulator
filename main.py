@@ -87,7 +87,18 @@ def build_runner(
         else Predator2DEnvironment(config.env)
     )
     encoder = LoomingEncoder(config.encoder, brain.populations, brain.size)
-    decoder = GiantFiberDecoder(config.decoder, brain.populations)
+
+    # Read the takeoff from the motor neurons when the dataset has them. On a brain-only
+    # connectome they are outside the volume, so the Giant Fiber is the last observable
+    # event and the takeoff must be inferred from it instead.
+    watched = profile.decoder_population
+    if watched not in brain.populations:
+        if watched != "GF":
+            print(f"  note: no {watched} population in this connectome; "
+                  f"falling back to GF")
+        watched = "GF"
+    decoder_params = replace(config.decoder, trigger_population=watched)
+    decoder = GiantFiberDecoder(decoder_params, brain.populations)
 
     return SimulationRunner(environment, brain, encoder, decoder, config)
 

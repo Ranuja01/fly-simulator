@@ -59,6 +59,18 @@ class CalibrationProfile:
     uses_population_overrides: bool = False
     """Whether the connectome's own per-population biophysics should be honoured."""
 
+    decoder_population: str = "GF"
+    """Which population the motor decoder watches to detect a takeoff.
+
+    On a brain-only connectome this must be the Giant Fiber: its motor targets are outside
+    the volume, so GF firing is the last observable event and the takeoff has to be
+    inferred from it. On a CNS dataset the motor neurons are present and fire ~8 ms later,
+    so the takeoff can be READ from the muscle rather than inferred from the command.
+
+    The kinematics remain scripted either way -- what changes is whether the trigger is
+    measured or assumed.
+    """
+
     escape_threshold_deg: float | None = None
     """The angular size at which this profile was fitted to trigger an escape.
 
@@ -113,6 +125,7 @@ PROFILES: dict[str, CalibrationProfile] = {
         encoder_gain_pa=26.0,
         pa_per_synapse=0.002,
         uses_population_overrides=False,
+        decoder_population="MOTOR",
         escape_threshold_deg=15.9,
         notes=(
             "male-cns:v1.0, male brain and ventral nerve cord. Fitted independently of "
@@ -137,6 +150,7 @@ def describe(profile: CalibrationProfile) -> str:
         parts.append(f"{profile.pa_per_synapse} pA/synapse")
     parts.append(f"gain {profile.encoder_gain_pa} pA")
     parts.append(f"tau_m {profile.neuron.tau_m_ms} ms")
+    parts.append(f"takeoff read from {profile.decoder_population}")
     if profile.escape_threshold_deg is not None:
         parts.append(f"fitted to escape at ~{profile.escape_threshold_deg:.0f} deg")
     return "  " + "  |  ".join(parts)
