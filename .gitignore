@@ -24,8 +24,9 @@ cache/
 *.swc
 *.h5
 
-# --- Local agent instructions (machine-specific; rules live in docs/) ---
+# --- Local working notes (untracked; durable material lives in docs/) ---
 CLAUDE.md
+DEVLOG.md
 
 # --- Secrets ---
 .env
