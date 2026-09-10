@@ -43,6 +43,51 @@ def _allocate(sizes: dict[str, int]) -> tuple[tuple[str, ...], dict[str, np.ndar
     return tuple(labels), populations
 
 
+def schematic_layout(
+    populations: dict[str, np.ndarray], n: int, seed: int = 0
+) -> np.ndarray:
+    """Cartoon brain coordinates for the hand-built circuits, in micrometres.
+
+    The anatomical panel should work without a 70 MB download, so the mock circuits get a
+    schematic layout arranged like a real fly brain: two lateral optic lobes holding the
+    visual neurons, a central brain holding the premotor pool, and the Giant Fibers medial
+    to both. Extents roughly match FlyWire's measured ones (~900 x 450 um) so the two
+    views read at the same scale.
+
+    This is a diagram, NOT anatomy. Positions here are invented; positions on a real
+    connectome are measured. The panel says which it is showing.
+    """
+    rng = np.random.default_rng(seed)
+    pos = np.zeros((n, 3), dtype=np.float64)
+
+    midline_x, centre_y, centre_z = 460.0, 230.0, 180.0
+    lobe_offset = 165.0
+
+    def scatter(idx: np.ndarray, cx: float, cy: float, cz: float, spread: float) -> None:
+        if idx.size == 0:
+            return
+        pos[idx] = rng.normal([cx, cy, cz], spread, size=(idx.size, 3))
+
+    for name, idx in populations.items():
+        idx = np.asarray(idx)
+        if name in ("LC4", "INH"):
+            # Visual and local inhibitory cells tile the two optic lobes, so split them
+            # left/right the way the real populations divide.
+            half = idx.size // 2
+            depth = 40.0 if name == "LC4" else 30.0
+            scatter(idx[:half], midline_x - lobe_offset, centre_y + 25, centre_z, depth)
+            scatter(idx[half:], midline_x + lobe_offset, centre_y + 25, centre_z, depth)
+        elif name == "GF":
+            # One Giant Fiber per hemisphere, medial to the optic lobes.
+            for k, single in enumerate(idx):
+                side = -1 if k % 2 == 0 else 1
+                pos[single] = [midline_x + side * 70.0, centre_y - 10, centre_z]
+        else:
+            scatter(idx, midline_x, centre_y - 20, centre_z, 55.0)
+
+    return pos
+
+
 def build_mock12() -> Connectome:
     """A 12-neuron escape circuit written out as an explicit, editable matrix.
 
@@ -81,6 +126,7 @@ def build_mock12() -> Connectome:
         weights=weights,
         populations=populations,
         param_overrides=PARAM_OVERRIDES,
+        positions=schematic_layout(populations, n),
         description=(
             "Hand-authored 12-neuron looming-escape circuit. Connection topology and the "
             "LC4->GF pathway are drawn from the Drosophila escape literature; the specific "
@@ -141,6 +187,7 @@ def build_synthetic120(seed: int = 0) -> Connectome:
         weights=weights,
         populations=populations,
         param_overrides=PARAM_OVERRIDES,
+        positions=schematic_layout(populations, n, seed=seed),
         description=(
             "Seeded 120-neuron realisation of the same circuit rule table as mock12. "
             "Sparse random connectivity with lognormal weights. Population sizes are "

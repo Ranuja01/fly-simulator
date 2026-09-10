@@ -63,6 +63,30 @@ class Connectome:
     description: str = ""
     """Human-readable provenance. Say where the numbers came from and what is invented."""
 
+    positions: Any = None
+    """Optional ``(N, D)`` anatomical coordinates in micrometres, or None.
+
+    Where each neuron physically sits. Real connectomes supply measured coordinates; the
+    hand-built circuits supply a schematic layout so the anatomical view works without a
+    download. Purely for visualisation -- the LIF engine never reads this, because a
+    simulated neuron has no location.
+
+    A caveat that matters for interpretation: FlyWire's coordinates are a single *marked
+    point* per neuron, not the centre of its arbor. A cell spanning the optic lobe and the
+    central brain is still one dot.
+    """
+
+    context_positions: Any = None
+    """Optional ``(M, D)`` positions of neurons NOT in this model, for anatomical reference.
+
+    A subnetwork extracted from a whole brain has no recognisable outline on its own -- the
+    LC4/DNp01 circuit is a flat wide sheet with no landmarks. Drawing the rest of the brain
+    behind it, greyed out, is what makes the anatomy legible.
+
+    These neurons are **not simulated**. Nothing reads this except the visualisation, and
+    the panel labels them as excluded so the picture cannot imply a whole-brain model.
+    """
+
     def __post_init__(self) -> None:
         n = len(self.labels)
         if n == 0:
@@ -103,6 +127,14 @@ class Connectome:
         for pop_name in self.param_overrides:
             if pop_name not in self.populations:
                 raise ValueError(f"param_overrides names unknown population {pop_name!r}.")
+
+        if self.positions is not None:
+            pos = np.asarray(self.positions)
+            if pos.ndim != 2 or pos.shape[0] != n:
+                raise ValueError(
+                    f"positions must be ({n}, D); got {pos.shape}. One row per neuron, "
+                    "in the same order as labels."
+                )
 
     @property
     def size(self) -> int:

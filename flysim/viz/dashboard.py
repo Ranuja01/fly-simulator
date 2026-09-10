@@ -67,6 +67,29 @@ SERIES_STYLE: dict[str, tuple[str, object, float, str]] = {
 # Frames to hold on screen after the episode ends, so the final state is readable.
 HOLD_FRAMES = 30
 
+# The brain view is a FIXED front-on projection of the real 3-D coordinates.
+#
+# It used to rock gently for parallax. That cost 74 ms per frame -- more than four times
+# the entire rest of the dashboard -- because any change of viewing angle moves every
+# point, forcing Matplotlib to rebuild the geometry of a 46,000-point scatter on every
+# frame. Holding the angle still lets the projection, the depth sort and the anatomical
+# backdrop all be computed exactly once, leaving only per-neuron colour and size to update.
+#
+# Nothing is lost analytically: the front view is the one that shows both optic lobes and
+# the Giant Fibers between them, which is the view worth looking at.
+BRAIN_VIEW_YAW_RAD = 0.22   # slight turn off dead-on, so the volume reads as 3-D
+
+# Cap on how many *sub-threshold* neurons the brain view draws.
+#
+# Matplotlib renders a scatter with per-point sizes as one path per point, so the cost is
+# linear in point count: 15,452 of them cost ~64 ms per frame, four times the whole rest
+# of the dashboard. The blue cloud is a density backdrop, so a representative sample
+# conveys exactly the same thing.
+#
+# Spiking neurons are NEVER subsampled -- they are the signal, they are drawn from the
+# full population in a separate overlay, and there are only ever a few hundred at once.
+BRAIN_CLOUD_MAX_POINTS = 4000
+
 
 class Dashboard:
     """Renders a :class:`SimulationRunner` as a live two-panel figure."""
@@ -76,10 +99,12 @@ class Dashboard:
         runner: SimulationRunner,
         config: SimConfig,
         steps_per_frame: int = 1,
+        show_brain: bool = True,
     ) -> None:
         self.runner = runner
         self.config = config
         self.steps_per_frame = max(int(steps_per_frame), 1)
+        self._want_brain = show_brain
         self._done = False
         self._hold = 0
         self._last_result = runner.reset()
@@ -111,14 +136,34 @@ class Dashboard:
             }
         )
 
-        self.fig = plt.figure(figsize=(14.0, 6.8))
-        gs = self.fig.add_gridspec(
-            2, 2, width_ratios=[1.0, 1.3], height_ratios=[1.0, 3.4],
-            left=0.05, right=0.975, top=0.90, bottom=0.09, wspace=0.16, hspace=0.06,
-        )
-        self.ax_space = self.fig.add_subplot(gs[:, 0])
-        self.ax_raster = self.fig.add_subplot(gs[0, 1])
-        self.ax_volt = self.fig.add_subplot(gs[1, 1], sharex=self.ax_raster)
+        self.fig = plt.figure(figsize=(16.0, 8.6))
+        # The panel roughly triples frame cost on a 15k-neuron connectome (Matplotlib
+        # draws one path per point), so it is worth being able to turn off.
+        self._has_brain_view = self._want_brain and getattr(
+            self.runner.brain.connectome, "positions", None
+        ) is not None
+
+        if self._has_brain_view:
+            gs = self.fig.add_gridspec(
+                2, 2, width_ratios=[1.05, 1.15], height_ratios=[1.0, 1.05],
+                left=0.04, right=0.98, top=0.89, bottom=0.075,
+                wspace=0.13, hspace=0.24,
+            )
+            self.ax_space = self.fig.add_subplot(gs[0, 0])
+            self.ax_brain = self.fig.add_subplot(gs[1, 0])
+            right = gs[:, 1].subgridspec(2, 1, height_ratios=[1.0, 3.4], hspace=0.06)
+            self.ax_raster = self.fig.add_subplot(right[0])
+            self.ax_volt = self.fig.add_subplot(right[1], sharex=self.ax_raster)
+        else:
+            gs = self.fig.add_gridspec(
+                2, 2, width_ratios=[1.0, 1.3], height_ratios=[1.0, 3.4],
+                left=0.05, right=0.975, top=0.90, bottom=0.09,
+                wspace=0.16, hspace=0.06,
+            )
+            self.ax_space = self.fig.add_subplot(gs[:, 0])
+            self.ax_brain = None
+            self.ax_raster = self.fig.add_subplot(gs[0, 1])
+            self.ax_volt = self.fig.add_subplot(gs[1, 1], sharex=self.ax_raster)
 
         self.fig.suptitle(
             "Drosophila looming-escape reflex  ·  LC4 → premotor → Giant Fiber",
@@ -133,6 +178,8 @@ class Dashboard:
         )
 
         self._build_spatial_panel()
+        if self._has_brain_view:
+            self._build_brain_panel()
         self._build_telemetry_panels()
         self._collect_animated()
 
@@ -154,6 +201,11 @@ class Dashboard:
         ]
         for low, high in self._band_lines.values():
             self._animated.extend((low, high))
+        if self._has_brain_view:
+            # The backdrop is static and lives in the cached blit background.
+            self._animated.extend(
+                [self._brain_cloud, self._brain_fired, self._brain_gf]
+            )
 
     def _build_spatial_panel(self) -> None:
         ax = self.ax_space
@@ -214,6 +266,148 @@ class Dashboard:
             bbox=dict(boxstyle="round,pad=0.45", facecolor=SURFACE,
                       edgecolor=GRIDLINE, linewidth=1.0),
         )
+
+    def _build_brain_panel(self) -> None:
+        """Panel C: the network drawn where it physically sits in the brain.
+
+        A NumPy-projected point cloud rather than a Matplotlib 3-D axes. Real 3-D would
+        depth-sort thousands of points in Python on every frame; projecting with a 3x3
+        rotation matrix and drawing a flat scatter costs almost nothing, and with slow
+        auto-rotation it still reads as a volume.
+        """
+        ax = self.ax_brain
+        connectome = self.runner.brain.connectome
+        positions = np.asarray(connectome.positions, dtype=np.float64)
+
+        # Centre on the anatomical backdrop when there is one, so the model sits in its
+        # true place inside the brain rather than being recentred on its own centroid.
+        context = getattr(connectome, "context_positions", None)
+        reference = np.asarray(context) if context is not None else positions
+        origin = np.nanmedian(reference, axis=0)
+
+        self._brain_xyz = positions - origin
+        self._brain_has_pos = np.isfinite(self._brain_xyz[:, 0])
+        self._brain_context_xyz = (
+            np.asarray(context, dtype=np.float64) - origin if context is not None else None
+        )
+        cos_a, sin_a = np.cos(BRAIN_VIEW_YAW_RAD), np.sin(BRAIN_VIEW_YAW_RAD)
+        self._brain_px = (
+            self._brain_xyz[:, 0] * cos_a + self._brain_xyz[:, 2] * sin_a
+        )
+        self._brain_py = self._brain_xyz[:, 1]
+        self._brain_depth = (
+            -self._brain_xyz[:, 0] * sin_a + self._brain_xyz[:, 2] * cos_a
+        )
+
+        measured = "flywire" in connectome.name or "neuprint" in connectome.name
+        source = "measured coordinates" if measured else "schematic layout"
+        ax.set_title(f"C  ·  Brain view  ({source})", loc="left", fontsize=10.5,
+                     fontweight="bold", color=INK, pad=8)
+        self._brain_subsampled = False
+
+        # Bound the view over a FULL revolution, not just the current pose. Yaw mixes x
+        # and z into the horizontal screen axis, so the widest the cloud can ever appear
+        # is its maximum radius in the xz-plane; y is unaffected by yaw. Sizing from
+        # max(|x|,|y|,|z|) instead leaves the cloud small and drifting off-centre as it
+        # turns, which is what the first attempt did.
+        extent = self._brain_xyz[self._brain_has_pos]
+        if self._brain_context_xyz is not None:
+            extent = np.vstack([extent, self._brain_context_xyz])
+        # Horizontal extent of the fixed projection.
+        projected_x = np.abs(
+            extent[:, 0] * np.cos(BRAIN_VIEW_YAW_RAD)
+            + extent[:, 2] * np.sin(BRAIN_VIEW_YAW_RAD)
+        )
+        horizontal = float(np.percentile(projected_x, 99.5))
+        vertical = float(np.percentile(np.abs(extent[:, 1]), 99.5))
+        radius = max(horizontal, vertical) * 1.08
+        ax.set_xlim(-radius, radius)
+        ax.set_ylim(radius, -radius)   # inverted: dorsal up, matching anatomical figures
+        ax.set_aspect("equal")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.grid(False)
+        for spine in ax.spines.values():
+            spine.set_color(GRIDLINE)
+
+        # Sized to be readable rather than minimal: at s=0.5 a 31,000-point cloud
+        # renders only its dense core and the brain outline disappears entirely.
+        if self._brain_context_xyz is not None:
+            ctx = self._brain_context_xyz
+            ax.scatter(
+                ctx[:, 0] * cos_a + ctx[:, 2] * sin_a, ctx[:, 1],
+                s=1.6, color=BASELINE, alpha=0.7, linewidths=0, zorder=1,
+            )
+
+        # Three layers, drawn back to front: the resting population, the depolarising
+        # ones, and the spikes. Separate collections rather than one, so the sizes and
+        # colours of each can be set independently without re-sorting everything.
+        # Painter's algorithm applied once: far neurons first so near ones land on top.
+        visible = np.flatnonzero(self._brain_has_pos)
+        if visible.size > BRAIN_CLOUD_MAX_POINTS:
+            step = visible.size // BRAIN_CLOUD_MAX_POINTS + 1
+            visible = visible[::step]
+        self._brain_order = visible[np.argsort(self._brain_depth[visible])]
+        self._brain_cloud = ax.scatter(
+            self._brain_px[self._brain_order], self._brain_py[self._brain_order],
+            s=4.0, c=np.zeros(self._brain_order.size), cmap="Blues",
+            vmin=0.0, vmax=1.0, linewidths=0, zorder=3,
+        )
+        self._brain_subsampled = visible.size < int(self._brain_has_pos.sum())
+        self._brain_fired = ax.scatter(
+            [], [], s=22.0, color=C_GF, linewidths=0, zorder=5,
+        )
+        self._brain_gf = ax.scatter(
+            [], [], s=210.0, marker="*", facecolor="none",
+            edgecolors=C_GF, linewidths=1.7, zorder=7,
+        )
+
+        ax.text(0.5, -0.045,
+                ("faint = rest of brain (not simulated)   ·   blue = depolarising"
+                 + (f" ({BRAIN_CLOUD_MAX_POINTS:,} shown)" if self._brain_subsampled else "")
+                 + "   ·   orange = spiking (all)   ·   ☆ = Giant Fiber"),
+                transform=ax.transAxes, ha="center", va="top",
+                fontsize=8, color=INK_MUTED)
+
+    def _draw_brain(self) -> None:
+        """Recolour the point cloud for this frame.
+
+        Positions, depth order and the anatomical backdrop are all fixed, so the only
+        per-frame work is the activation colour, the point sizes, and the handful of
+        neurons that spiked. That is what keeps a 46,000-point panel affordable.
+        """
+        result = self._last_result
+        spikes = result.frame_spikes
+        if spikes is None:
+            spikes = result.state.spikes
+
+        # Depolarisation, 0 at rest and 1 at threshold. Uses the per-neuron threshold, so
+        # a connectome with heterogeneous thresholds still normalises correctly.
+        rest = self.config.neuron.v_rest_mv
+        threshold = np.asarray(self.runner.brain.v_threshold)
+        activation = np.clip(
+            (result.state.voltages - rest) / np.maximum(threshold - rest, 1e-6), 0, 1
+        )
+
+        ordered = activation[self._brain_order]
+        self._brain_cloud.set_array(ordered)
+        # Depolarised cells grow as well as darken, so the cue survives colour-vision
+        # deficiency and the small point size.
+        self._brain_cloud.set_sizes(3.5 + 30.0 * ordered)
+
+        fired = np.flatnonzero(self._brain_has_pos & spikes)
+        self._brain_fired.set_offsets(
+            np.column_stack([self._brain_px[fired], self._brain_py[fired]])
+            if fired.size else np.empty((0, 2))
+        )
+
+        gf = np.asarray(self.runner.brain.populations.get("GF", []), dtype=np.int64)
+        gf = gf[self._brain_has_pos[gf]] if gf.size else gf
+        if gf.size:
+            self._brain_gf.set_offsets(
+                np.column_stack([self._brain_px[gf], self._brain_py[gf]])
+            )
+            self._brain_gf.set_facecolor(C_GF if spikes[gf].any() else "none")
 
     def _build_telemetry_panels(self) -> None:
         tracked = self.runner.tracked
@@ -360,6 +554,8 @@ class Dashboard:
             self._hold += 1
 
         self._draw_spatial()
+        if self._has_brain_view:
+            self._draw_brain()
         self._draw_telemetry()
         return self._animated
 

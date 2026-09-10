@@ -3,7 +3,8 @@
 A *Drosophila* neural-network simulator built to scale. The Starter Phase is a complete,
 runnable 2D looming-escape reflex — LC4 visual neurons through a premotor pool to the
 Giant Fiber — driven by a vectorized leaky integrate-and-fire engine, with a live
-split-screen dashboard.
+three-panel dashboard that shows the escape decision propagating through real brain
+anatomy.
 
 The architecture is cut so that the same LIF engine later drives a MuJoCo or Minecraft
 body and reads a real ~140,000-neuron FlyWire connectome **without the engine changing**.
@@ -17,7 +18,7 @@ python main.py
 That is the whole setup. NumPy and Matplotlib, nothing else — no API token, no download,
 no data files. The connectome is a hardcoded 12×12 matrix.
 
-![two-panel dashboard: spatial view and neural telemetry](docs/dashboard.png)
+![three-panel dashboard: spatial view, neural telemetry, and the simulated neurons drawn in their real anatomical positions](docs/dashboard.png)
 
 ## What you are looking at
 
@@ -30,6 +31,12 @@ potentials, aligned vertically so a spike sits directly above the voltage that p
 it. You watch LC4 (blue) begin firing, the premotor pool (aqua) follow ~50 ms later,
 inhibition (grey) track alongside, and the Giant Fiber (orange) integrate until it crosses
 its threshold and fires exactly once.
+
+**Panel C — Brain view.** Every simulated neuron drawn where it physically sits, from
+FlyWire's measured coordinates. The rest of the brain is greyed out behind it — those
+neurons are *not* simulated. Watch the LC4 population light up bilaterally in the optic
+lobes, then the two Giant Fibers flash between them. The mock circuits get a schematic
+layout so this panel works with no download.
 
 The escape vector in Panel A is the same colour as the GF trace in Panel B because they
 are the same event.
@@ -70,7 +77,29 @@ python main.py --connectome synthetic120 --seed 2
 python main.py --connectome synthetic120 --lesion-lc4 0.4
 
 python main.py --benchmark 50000                 # sparse-vs-dense, measured (needs SciPy)
+
+python main.py --interactive                     # YOU are the threat: drive it with the mouse
+python main.py --interactive --connectome flywire
+python main.py --no-brain-view                   # drop panel C for a higher frame rate
+python main.py --steps-per-frame 1               # 5x slow motion
+python main.py --brain-dt 0.2                    # coarser timestep, ~2x faster
 ```
+
+### Interactive mode
+
+```powershell
+python main.py --interactive
+```
+
+Move the mouse over the spatial panel to place the threat, scroll to resize it, `r` to
+reset the fly. Things worth trying:
+
+* **Creep in slowly, then flick fast from the same distance.** Same object, same position,
+  opposite outcome — the circuit is measuring expansion rate, not proximity.
+* **Scroll the object large and approach from far away.** It triggers at a much greater
+  distance, because angular size is what matters.
+* **Watch Panel B during a near miss.** You can catch the Giant Fiber ramping toward
+  threshold and falling back without firing. That is the inhibition doing its job.
 
 ## The two connectomes, and why both exist
 
@@ -78,6 +107,7 @@ python main.py --benchmark 50000                 # sparse-vs-dense, measured (ne
 |---|---|---|
 | Size | 6 LC4, 3 premotor, 2 inhibitory, 1 GF | 80 / 30 / 9 / 1 |
 | Weights | hand-written literal you can read | seeded lognormal, sparse |
+| Biophysics | hand-tuned per population | hand-tuned per population |
 | Determinism | fully deterministic | varies with `--seed` |
 | Shows | signal propagation, per-neuron traces | population coding, jitter, graded lesions |
 
@@ -166,6 +196,12 @@ Verified against a table with the real Codex schema:
 
 It then runs through the **unchanged** environment, encoder, LIF engine, decoder and
 dashboard — the same claim `synthetic120` makes, now against real anatomy.
+
+Real connectomes run the **published uniform LIF parameters** (Shiu et al., Nature 2024:
+τ_m 20 ms, τ_syn 5 ms, threshold −45 mV, reset to rest) rather than the per-population
+biophysics the mock circuit was tuned around. That matters: it means the escape threshold
+comes from measured wiring plus published parameters, not from anything hand-fitted here.
+It lands at **24.0°**, against the mock's 24.9°, which converged without being made to.
 
 Useful flags: `--flywire-dir PATH`, `--flywire-version v783`, `--flywire-hops 2`.
 

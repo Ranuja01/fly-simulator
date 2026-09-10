@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     print("Loading connectome tables once ...")
-    connections, annotations = loaders.load_codex_tables(args.dir, args.version)
+    connections, annotations, _ = loaders.load_codex_tables(args.dir, args.version)
     keep = loaders.select_pathway(
         connections, annotations, hops=args.hops, max_neurons=args.max_neurons
     )

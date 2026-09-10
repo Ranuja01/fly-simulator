@@ -158,6 +158,9 @@ DEFAULT_PA_PER_SYNAPSE = 0.007
 # dominated by segmentation and detection error.
 DEFAULT_MIN_SYNAPSES = 5
 
+# Cap on the anatomical backdrop. Purely a rendering budget.
+CONTEXT_MAX_POINTS = 25_000
+
 
 # ---------------------------------------------------------------------------
 # Functional population mapping
@@ -223,8 +226,13 @@ _CONNECTION_HINTS = ("connection",)
 # Files that are large, per-synapse, or otherwise not per-neuron annotations. Merging
 # these would be slow and pointless, so they are skipped with a note.
 _SKIP_HINTS = (
-    "synapse", "skeleton", "coordinate", "column", "size", "community", "tag",
+    "synapse", "skeleton", "column", "size", "community", "tag",
 )
+
+# Coordinates are per-neuron but are NOT merged into the annotation table: the position
+# column is a bracketed string that would survive the merge as useless text. Handled
+# separately by _load_positions.
+_COORDINATE_HINTS = ("coordinate", "position")
 
 
 def _read_any(path: Path) -> pd.DataFrame:
@@ -266,10 +274,13 @@ def _discover(directory: Path) -> tuple[Path, list[Path]]:
 
     connection_files: list[Path] = []
     annotations: list[Path] = []
+    coordinate_files: list[Path] = []
     for path in candidates:
         name = path.name.lower()
         if any(h in name for h in _CONNECTION_HINTS):
             connection_files.append(path)
+        elif any(h in name for h in _COORDINATE_HINTS):
+            coordinate_files.append(path)
         elif any(h in name for h in _SKIP_HINTS):
             print(f"  skipping {path.name} (not a per-neuron annotation)")
         else:
@@ -299,7 +310,40 @@ def _discover(directory: Path) -> tuple[Path, list[Path]]:
         seen_stems.add(stem)
         deduped.append(path)
 
-    return chosen, deduped
+    return chosen, deduped, coordinate_files
+
+
+def _load_positions(paths: list[Path]) -> pd.DataFrame | None:
+    """Parse marked-point coordinates into a root_id-indexed frame, in micrometres.
+
+    Codex stores the position as a bracketed string, ``"[352484 175164 229040]"``, in
+    nanometres. Several rows may exist per neuron -- roughly 1.7 on average for FAFB v783
+    -- so they are averaged into one representative point.
+
+    Sanity check on the units: the resulting extent is ~815 x 392 x 278 um, which matches
+    an adult Drosophila brain (roughly 600 x 350 x 250 um). Reading the same numbers as
+    4x4x40 nm voxels would give ~3261 x 1566 x 11139 um, which is absurd -- a useful guard
+    if a future release changes the convention.
+    """
+    if not paths:
+        return None
+
+    frame = _read_any(paths[0])
+    id_col = _resolve(frame, "root_id", required=False)
+    if id_col is None or "position" not in frame.columns:
+        print(f"  skipping {paths[0].name} (no recognisable position column)")
+        return None
+
+    parts = frame["position"].astype(str).str.strip("[]").str.split()
+    xyz = np.array([[float(v) for v in row] for row in parts], dtype=np.float64) / 1000.0
+
+    out = pd.DataFrame(
+        {"root_id": frame[id_col].to_numpy(), "x": xyz[:, 0],
+         "y": xyz[:, 1], "z": xyz[:, 2]}
+    )
+    averaged = out.groupby("root_id")[["x", "y", "z"]].mean()
+    print(f"  positions for {len(averaged):,} neurons ({paths[0].name})")
+    return averaged
 
 
 def load_codex_tables(directory: str | Path | None = None, version: str = "v783"):
@@ -311,12 +355,14 @@ def load_codex_tables(directory: str | Path | None = None, version: str = "v783"
     handling from you.
 
     Returns:
-        ``(connections, annotations)`` as pandas DataFrames.
+        ``(connections, annotations, positions)``. ``positions`` is None when no
+        coordinate table was downloaded -- everything still works, the anatomical view
+        simply has nothing to draw.
     """
     directory = Path(directory) if directory else cache_root() / "flywire" / version
     print(f"Loading FlyWire tables from {directory}")
 
-    connection_path, annotation_paths = _discover(directory)
+    connection_path, annotation_paths, coordinate_paths = _discover(directory)
     connections = _read_any(connection_path)
 
     if not annotation_paths:
@@ -352,8 +398,9 @@ def load_codex_tables(directory: str | Path | None = None, version: str = "v783"
             "column. Add the correct spelling to COLUMN_ALIASES in this module."
         )
 
+    positions = _load_positions(coordinate_paths)
     print(f"  {len(connections):,} raw edges, {len(merged):,} annotated neurons")
-    return connections, merged
+    return connections, merged, positions
 
 
 # ---------------------------------------------------------------------------
@@ -440,6 +487,7 @@ def connectome_from_tables(
     min_synapses: int = DEFAULT_MIN_SYNAPSES,
     pa_per_synapse: float = DEFAULT_PA_PER_SYNAPSE,
     sparse: bool | None = None,
+    positions: "pd.DataFrame | None" = None,
 ) -> Connectome:
     """Convert FlyWire-shaped tables into a :class:`Connectome`.
 
@@ -535,6 +583,29 @@ def connectome_from_tables(
                 "to. Check that your seed types matched (see select_pathway's output)."
             )
 
+    # Anatomical coordinates, in the same order as `ids` so row i is neuron i. Neurons
+    # without a coordinate get NaN rather than being dropped: they still participate in
+    # the simulation, they just cannot be drawn.
+    coords = None
+    if positions is not None:
+        coords = positions.reindex(ids)[["x", "y", "z"]].to_numpy(dtype=np.float64)
+        located = int(np.isfinite(coords[:, 0]).sum())
+        if located == 0:
+            coords = None
+        elif located < len(ids):
+            print(f"  {len(ids) - located:,} neurons have no coordinate (drawn as absent)")
+
+    # Anatomical backdrop: positioned neurons excluded from this subnetwork. Subsampled,
+    # because 139k faint dots costs render time and adds no information over 25k.
+    context = None
+    if positions is not None and coords is not None:
+        outside = positions.drop(index=[i for i in ids if i in positions.index],
+                                 errors="ignore")
+        if len(outside):
+            step = max(len(outside) // CONTEXT_MAX_POINTS, 1)
+            context = outside.iloc[::step][["x", "y", "z"]].to_numpy(dtype=np.float64)
+            print(f"  anatomical backdrop: {len(context):,} neurons (not simulated)")
+
     counts_str = ", ".join(f"{k}={len(v)}" for k, v in sorted(population_arrays.items()))
     print(f"  built connectome: {n:,} neurons, {int(nonzero.sum()):,} edges ({counts_str})")
 
@@ -562,6 +633,8 @@ def connectome_from_tables(
         # wiring should be doing. Real data gets uniform published parameters (SHIU_2024)
         # so that any structure in the behaviour is attributable to the anatomy.
         param_overrides={},
+        positions=coords,
+        context_positions=context,
         description=(
             f"Derived from FlyWire-shaped tables. {n} neurons, "
             f"{int(nonzero.sum())} edges at >= {min_synapses} synapses. "
@@ -581,7 +654,7 @@ def build_flywire(
     **kwargs,
 ) -> Connectome:
     """One-call path: Codex tables on disk -> a runnable :class:`Connectome`."""
-    connections, classification = load_codex_tables(directory, version)
+    connections, classification, positions = load_codex_tables(directory, version)
     keep = select_pathway(
         connections, classification, seed_types=seed_types, hops=hops,
         min_synapses=kwargs.get("min_synapses", DEFAULT_MIN_SYNAPSES),
@@ -589,5 +662,5 @@ def build_flywire(
     )
     return connectome_from_tables(
         connections, classification, keep_ids=keep,
-        name=f"flywire-{version}", **kwargs,
+        name=f"flywire-{version}", positions=positions, **kwargs,
     )
