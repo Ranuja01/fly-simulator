@@ -24,6 +24,9 @@ cache/
 *.swc
 *.h5
 
+# --- Local agent instructions (machine-specific; rules live in docs/) ---
+CLAUDE.md
+
 # --- Secrets ---
 .env
 *.token

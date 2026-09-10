@@ -170,8 +170,7 @@ dashboard with **zero source changes**.
 |---|---|
 | [docs/COMPUTE_BUDGET.md](docs/COMPUTE_BUDGET.md) | Storage/RAM/GPU budgets, the 78 GB dense-matrix trap, directory layout, where the cache must live |
 | [docs/CONNECTOME_ACCESS.md](docs/CONNECTOME_ACCESS.md) | NeuPrint and FlyWire tokens step by step, live queries, extracting LC4→DNp01, converting to `Connectome` |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | MuJoCo / Minecraft / socket integration, the timing problem, what still needs work |
-| [CLAUDE.md](CLAUDE.md) | Contributor and agent rules: import boundaries, units, data-location policy |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | MuJoCo / Minecraft / socket integration, the timing problem, what still needs work, and the project conventions (import boundaries, units, verification) |
 
 ## Going to real data
 

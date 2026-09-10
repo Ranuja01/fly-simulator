@@ -235,3 +235,58 @@ amount of software design supplies.
 
 Keep step 2's subnetwork around permanently as an integration test. It is small enough to
 run in seconds and real enough to catch mistakes that the mock cannot.
+
+---
+
+## 7. Project conventions
+
+These are the rules the codebase is written against. They are not style preferences —
+breaking them causes real bugs, and each one is here because it already has.
+
+### Units (do not mix)
+
+| Quantity | Unit | Notes |
+|---|---|---|
+| Membrane voltage | mV | |
+| Current | pA | |
+| Membrane resistance | GΩ | 1 pA × 1 GΩ = 1 mV |
+| Time constants, delays | ms | `dt_ms` everywhere inside `flysim/brain/` |
+| Synaptic weight | pA per presynaptic spike | instantaneous jump, then decays with `tau_syn` |
+| Environment time | **s** | `EnvObservation.t` is the only seconds-valued time |
+| Position, distance | m | |
+| Anatomical coordinates | µm | converted from the source's nanometres on load |
+
+`EnvObservation.t` is in **seconds**; everything inside `flysim/brain/` is in
+**milliseconds**. The conversion happens exactly once, in `SimulationRunner`.
+
+### Verification
+
+```powershell
+python main.py --check                            # acceptance test, exit code
+python main.py --connectome synthetic120 --check  # seam test: no source edits allowed
+python main.py --connectome flywire --check       # the same gate on REAL data
+python -c "from flysim.brain.lif import LIFBrain" # decoupling smoke test
+```
+
+**Run the real-connectome check, not just the mock.** Switching real connectomes to
+uniform published parameters once removed the Giant Fiber's long refractory period and let
+it fire at 455 Hz, producing 415 takeoffs in 20 seconds of interactive play — while every
+mock-only check still passed, because the mock keeps its own biophysics. Any change
+affecting real connectomes is untested until it has been run against real data.
+
+### Data location
+
+Connectome caches must live **outside the repository**, pointed at by `FLYSIM_CACHE_DIR`.
+They run to hundreds of megabytes; `.gitignore` covers the extensions as a backstop, but
+the real protection is keeping the cache root elsewhere entirely.
+
+### Comments
+
+Comments explain the **neuroscience** and the **why**, never the edit history.
+
+* Good: `# Exponential Euler: exact for constant I over dt, unconditionally stable.`
+* Good: `# LC4 also synapses directly onto GF dendrites; this layer is a simplification.`
+* Bad: `# NEW:`, `# Phase 2 fix`, `# updated per feedback`
+
+Where the model departs from biology, **say so in the comment**. Do not present a
+simplification as ground truth — that is how a model quietly becomes a claim.
