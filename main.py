@@ -252,10 +252,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Simulation frames per rendered frame. Higher = closer to "
                              "real time, lower = more slow-motion detail. Defaults to 5 "
                              "for --interactive, 1 otherwise.")
-    parser.add_argument("--no-brain-view", action="store_true",
-                        help="Hide the anatomical panel. It costs roughly 2x the frame "
-                             "time on a large connectome; drop it for a smoother "
-                             "interactive session.")
+    parser.add_argument("--brain-view", dest="brain_view", action="store_true",
+                        default=None,
+                        help="Force the anatomical panel on. Default: on for scripted "
+                             "runs, off for --interactive (it roughly halves the frame "
+                             "rate, and responsiveness matters more when you are driving).")
+    parser.add_argument("--no-brain-view", dest="brain_view", action="store_false",
+                        help="Hide the anatomical panel.")
     parser.add_argument("--interactive", action="store_true",
                         help="You are the threat: the object follows your mouse. Scroll to "
                              "resize it, 'r' to reset the fly. Runs until you close it.")
@@ -356,9 +359,15 @@ def main(argv: list[str] | None = None) -> int:
     if steps_per_frame is None:
         steps_per_frame = INTERACTIVE_STEPS_PER_FRAME if args.interactive else 1
 
+    # Interactive sessions default the anatomical panel OFF. It roughly halves the frame
+    # rate on a large connectome, and a laggy session makes the fly look frozen -- which is
+    # the specific failure the steps-per-frame work went in to fix.
+    show_brain = args.brain_view
+    if show_brain is None:
+        show_brain = not args.interactive
+
     dashboard = Dashboard(
-        runner, config, steps_per_frame=steps_per_frame,
-        show_brain=not args.no_brain_view,
+        runner, config, steps_per_frame=steps_per_frame, show_brain=show_brain,
     )
     dashboard.run(save_path=args.save, show=not args.no_show)
     print(json.dumps(runner.summary(), indent=2, default=str))
