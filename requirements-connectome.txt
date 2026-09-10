@@ -1,0 +1,24 @@
+# Production Phase — real connectome access. NOT needed for `python main.py`.
+#
+#   pip install -r requirements-connectome.txt
+#
+# Install these only when you are ready to pull real data. `navis` in particular drags in a
+# large dependency tree (igraph, trimesh, plotly, ncollpyde) and is only required for
+# skeleton/morphology work — if you just want connectivity, install neuprint-python alone.
+
+-r requirements-starter.txt
+
+# --- Janelia NeuPrint (hemibrain, MANC, MaleCNS) ---
+neuprint-python>=0.4.26      # Client, fetch_neurons, fetch_adjacencies, NeuronCriteria
+pandas>=2.0                  # every neuprint query returns DataFrames
+scipy>=1.10                  # sparse adjacency matrices
+
+# --- FlyWire / FAFB (full adult female brain) ---
+caveclient>=5.15.0           # CAVE auth + materialized table queries
+fafbseg>=3.0.0               # FlyWire convenience layer over CAVE
+
+# --- Morphology / skeletons (heavy; optional) ---
+navis>=1.7.0                 # neuron skeletons, NBLAST, plotting
+
+# --- Fast local caching of large tables ---
+pyarrow>=14.0                # parquet/feather round-trips instead of re-downloading CSVs

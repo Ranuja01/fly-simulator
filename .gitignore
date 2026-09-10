@@ -1,0 +1,29 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# --- Simulation output ---
+outputs/
+*.mp4
+*.gif
+*.png
+!docs/**/*.png
+
+# --- Connectome data ---
+# Caches must live OUTSIDE this repo (see FLYSIM_CACHE_DIR in docs/COMPUTE_BUDGET.md).
+# These patterns are a safety net in case someone points a cache here by accident.
+data/
+cache/
+*.csv
+*.feather
+*.parquet
+*.swc
+*.h5
+
+# --- Secrets ---
+.env
+*.token

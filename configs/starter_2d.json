@@ -1,0 +1,18 @@
+{
+  "_comment": "Partial overrides. Anything omitted falls back to the defaults in flysim/config.py. Load with: python main.py --config configs/starter_2d.json",
+
+  "connectome": "mock12",
+  "seed": 3,
+
+  "env": {
+    "predator_speed_ms": 0.42,
+    "predator_start_distance_m": 0.60,
+    "threat_size_m": 0.020,
+    "duration_s": 2.4
+  },
+
+  "encoder": {
+    "gain_pa": 3.2,
+    "steepness": 6.0
+  }
+}

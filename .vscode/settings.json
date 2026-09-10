@@ -1,0 +1,31 @@
+{
+  "//": "Keeps VS Code's indexer off generated/large data. This repo lives inside OneDrive and has a history of memory blowups from indexing generated files.",
+
+  "python.analysis.indexing": false,
+  "python.analysis.userFileIndexingLimit": 500,
+  "python.analysis.autoImportCompletions": false,
+  "python.analysis.exclude": [
+    "**/outputs/**",
+    "**/data/**",
+    "**/cache/**",
+    "**/__pycache__/**"
+  ],
+
+  "files.watcherExclude": {
+    "**/outputs/**": true,
+    "**/data/**": true,
+    "**/cache/**": true,
+    "**/__pycache__/**": true,
+    "**/.git/objects/**": true
+  },
+
+  "search.exclude": {
+    "**/outputs": true,
+    "**/data": true,
+    "**/cache": true,
+    "**/__pycache__": true
+  },
+
+  "search.followSymlinks": false,
+  "files.trimTrailingWhitespace": true
+}

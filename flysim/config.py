@@ -1,0 +1,342 @@
+"""Every tunable number in the simulation, in one place.
+
+Frozen dataclasses so a config cannot be mutated halfway through a run (a classic source
+of irreproducible results). Use :func:`dataclasses.replace` to derive a variant, and
+:meth:`SimConfig.from_json` to load overrides from ``configs/*.json``.
+
+JSON rather than YAML on purpose: ``json`` is in the standard library, and the Starter
+Phase promise is that it runs with numpy and matplotlib and nothing else.
+
+Default parameter values are chosen to be *plausible* for Drosophila central neurons, not
+to reproduce any specific published recording. Where a value is a modelling convenience
+rather than a measurement, the comment says so.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field, replace
+from pathlib import Path
+from typing import Any
+
+
+@dataclass(frozen=True)
+class NeuronParams:
+    """Single-compartment leaky integrate-and-fire parameters.
+
+    These are the *defaults*; :class:`~flysim.brain.connectome.Connectome` may override
+    any of them per population (a Giant Fiber does not integrate like an LC4).
+
+    Fly central neurons are small and have high input resistance — values in the GΩ range
+    are typical, which is why tens of picoamps produce tens of millivolts here.
+    """
+
+    v_rest_mv: float = -52.0
+    """Resting potential. Fly central neurons rest more depolarised than the textbook
+    mammalian -70 mV."""
+
+    v_reset_mv: float = -60.0
+    """Post-spike reset potential. Below rest, producing a brief after-hyperpolarisation."""
+
+    v_threshold_mv: float = -45.0
+    """Spike threshold. The 7 mV gap from rest is small, so modest input drives firing."""
+
+    v_floor_mv: float = -85.0
+    """Hard clamp on how negative the membrane may go. Physically motivated (the chloride
+    reversal potential is a real floor) and numerically useful: it stops strong inhibition
+    or a mis-specified weight matrix from producing a runaway negative voltage."""
+
+    tau_m_ms: float = 10.0
+    """Membrane time constant, ``R_m * C_m``. Sets how long the neuron integrates."""
+
+    r_m_gohm: float = 1.0
+    """Input resistance. 1 pA x 1 GΩ = 1 mV, so this doubles as the pA->mV gain."""
+
+    tau_syn_ms: float = 3.0
+    """Synaptic current decay. Fast, matching nicotinic cholinergic transmission."""
+
+    refractory_ms: float = 2.0
+    """Absolute refractory period: the neuron is clamped at reset and cannot spike."""
+
+    delay_ms: float = 1.0
+    """Axonal + synaptic transmission delay. This is what makes signal propagation
+    visible as a staircase across layers in the telemetry panel rather than instantaneous."""
+
+    bias_current_pa: float = 0.0
+    """Constant background drive, e.g. tonic excitation from outside the modelled circuit."""
+
+    noise_mv: float = 0.35
+    """Standard deviation of membrane potential noise. Stands in for channel noise and
+    unmodelled synaptic bombardment; it is what gives the traces their fuzz and makes
+    spike timing jitter trial-to-trial."""
+
+
+SHIU_2024 = NeuronParams(
+    # Published leaky integrate-and-fire parameters for whole-brain Drosophila
+    # connectome simulation (Shiu et al., Nature 2024), as used by other connectome
+    # simulators. Adopted for REAL connectomes so results are comparable to a reference
+    # model rather than only to themselves.
+    #
+    # Note what is uniform here: every neuron gets identical biophysics. Any difference
+    # in behaviour between cell types then comes from the wiring, which is the point --
+    # per-population tuning would let the modeller smuggle in the answer.
+    v_rest_mv=-52.0,
+    v_reset_mv=-52.0,      # resets to rest: no after-hyperpolarisation
+    v_threshold_mv=-45.0,
+    tau_m_ms=20.0,
+    tau_syn_ms=5.0,
+    refractory_ms=2.2,
+    delay_ms=1.8,
+)
+"""Reference parameter set. See docs/CONNECTOME_ACCESS.md for provenance.
+
+The one thing NOT fixed by the reference is synaptic strength: that paper expresses it as
+a millivolt step times a global gain, while this engine works in picoamps through an input
+resistance. The conversion depends on the synapse model, so ``pa_per_synapse`` stays a
+calibrated free parameter -- see tools/calibrate_pa.py.
+"""
+
+
+@dataclass(frozen=True)
+class EnvParams:
+    """2D arena and predator pursuit parameters."""
+
+    arena_half_width_m: float = 0.55
+    """Arena spans [-w, +w] on both axes. Wide enough that a full escape trajectory fits
+    without bouncing off a wall."""
+
+    fly_start: tuple[float, float] = (0.0, 0.0)
+    predator_start_distance_m: float = 0.60
+    """Initial fly-predator separation. Set to 0 to exercise the coincident-position
+    edge case."""
+
+    predator_start_angle_deg: float = 200.0
+    """Bearing of the predator's starting position relative to the fly."""
+
+    predator_speed_ms: float = 0.42
+    """Pursuit speed. A real predatory strike is far faster; this is slowed so the
+    looming ramp is visible in the dashboard."""
+
+    threat_size_m: float = 0.020
+    """Physical extent ``l`` of the looming object. Drives the ``l/d`` ratio."""
+
+    fly_jitter_ms: float = 0.010
+    """Std-dev of noise added to the walking velocity, m/s."""
+
+    # --- Idle locomotion -------------------------------------------------------
+    # Drosophila do not drift like Brownian particles. They walk in bouts along a body
+    # axis, punctuated by rapid turns ("body saccades"), and stop frequently. Modelling
+    # that is what stops the fly reading as a robot sliding on rails.
+    #
+    # IMPORTANT: this is kinematics, not neuroscience. No locomotor circuit produces it;
+    # it is a scripted stand-in so the animal looks alive between escapes. Only the
+    # ESCAPE is neurally driven. Do not report walking statistics from this model.
+
+    fly_walk_speed_ms: float = 0.018
+    """Forward walking speed during a bout. Drosophila walk at roughly 10-25 mm/s."""
+
+    fly_saccade_rate_hz: float = 1.6
+    """Rate of spontaneous turns. Each is near-instantaneous, as real body saccades are."""
+
+    fly_saccade_deg: float = 65.0
+    """Mean turn magnitude; sign is random and the size is drawn around this."""
+
+    fly_pause_rate_hz: float = 0.9
+    """Rate of switching between walking and standing still."""
+
+    fly_walk_fraction: float = 0.65
+    """Fraction of time spent walking rather than standing."""
+
+    # --- Escape flight ---------------------------------------------------------
+    # An escape is three phases, not one ballistic coast: a fast jump, a stretch of
+    # powered flight away from the threat, then a landing. Modelling it as pure drag
+    # decay from the takeoff velocity gets both ends wrong — the jump has to be slow to
+    # decay (or the fly never outruns a pursuer), which makes the flight last seconds and
+    # cross the whole arena, so the animal spends all its time gliding and never walks.
+
+    fly_cruise_speed_ms: float = 0.62
+    """Powered flight speed after the initial jump. Must exceed the predator's speed or
+    escaping is impossible in principle."""
+
+    fly_flight_duration_s: float = 0.85
+    """How long powered flight lasts before the fly settles and lands."""
+
+    fly_jump_decay_per_s: float = 11.0
+    """How fast the takeoff impulse bleeds off toward cruise speed. High: the jump itself
+    is brief."""
+
+    fly_drag_per_s: float = 7.0
+    """Deceleration once flight ends, 1/s. High enough that landing takes a fraction of a
+    second rather than seconds."""
+
+    landing_speed_ms: float = 0.06
+    """Below this speed the fly is considered to have landed, which re-arms the reflex.
+    The escape is a repeatable reflex, not a one-shot: a fly that lands next to a still-
+    approaching predator will jump again."""
+
+    capture_distance_m: float = 0.012
+    """Below this separation the predator has caught the fly and the episode ends."""
+
+    escape_success_distance_m: float = 0.28
+    """Once airborne and this far from the predator, the getaway has succeeded and the
+    episode ends. Without it the predator simply re-closes and the run has no ending."""
+
+    duration_s: float = 2.4
+    """Episode time limit."""
+
+    seed: int = 7
+
+
+@dataclass(frozen=True)
+class EncoderParams:
+    """Looming (visual expansion) encoder parameters."""
+
+    gain_pa: float = 3.2
+    """Scales the dimensionless looming value into picoamps."""
+
+    steepness: float = 6.0
+    """``k`` in ``exp(k * l / d) - 1``. Higher = later, sharper escalation."""
+
+    max_current_pa: float = 140.0
+    """Saturation ceiling. Real photoreceptor and LC4 responses saturate; this also
+    bounds the input no matter how small the distance becomes."""
+
+    max_exponent: float = 20.0
+    """Hard clip on the exponent before ``exp``. ``exp(20)`` is ~4.9e8, comfortably
+    finite; without this, a predator at d->0 overflows float64 and yields inf/NaN."""
+
+    min_distance_m: float = 1e-4
+    """Division-by-zero guard: ``l / max(d, eps)``."""
+
+    receptive_field_spread: float = 0.22
+    """Per-LC4 gain heterogeneity (fractional std-dev). LC4 neurons tile the visual field
+    with different receptive fields, so they do not all see the same expansion equally.
+    Seeded, so runs are reproducible."""
+
+    target_population: str = "LC4"
+    """Which population receives the visual drive. Named, not indexed, so a connectome
+    swap that renumbers neurons needs no change here."""
+
+    seed: int = 11
+
+
+@dataclass(frozen=True)
+class DecoderParams:
+    """Giant Fiber motor decoder parameters."""
+
+    trigger_population: str = "GF"
+    """A spike in any neuron of this population triggers escape."""
+
+    takeoff_delay_ms: float = 5.0
+    """Delay from GF spike to the fly actually leaving the ground. The GF drives the
+    tergotrochanteral (jump) muscle via TTMn; the electrical-plus-chemical synapse and
+    muscle activation together cost a few milliseconds."""
+
+    takeoff_speed_ms: float = 1.60
+    """Initial takeoff velocity. Chosen so the getaway is decisive against the default
+    predator speed rather than merely buying a few centimetres."""
+
+    command_window_ms: float = 20.0
+    """How long a single GF spike keeps commanding a takeoff. Makes the escape a
+    re-armable reflex: the decoder does not latch permanently, so a second GF spike later
+    in the episode drives a second jump."""
+
+    escape_bias_deg: float = 42.0
+    """Flies do not jump straight backwards — they take off away from the threat with a
+    consistent lateral bias. Applied as a rotation of the away-from-threat vector."""
+
+
+@dataclass(frozen=True)
+class RunnerParams:
+    """Loop timing."""
+
+    brain_dt_ms: float = 0.1
+    """Neural integration timestep. Must be well below the smallest time constant."""
+
+    frame_dt_ms: float = 4.0
+    """Environment/render timestep. One frame = ``frame_dt_ms / brain_dt_ms`` brain steps,
+    which is how ~5-10 ms of synaptic propagation becomes visible instead of a blip."""
+
+    telemetry_decimation: int = 4
+    """Record every Nth brain substep into the scrolling plot buffer. Purely a plotting
+    concern — the simulation always integrates at full resolution."""
+
+
+@dataclass(frozen=True)
+class VizParams:
+    """Dashboard appearance."""
+
+    window_ms: float = 260.0
+    """Width of the scrolling telemetry window."""
+
+    trail_frames: int = 400
+    """Length of the position trails in Panel A. Long enough to show the whole approach,
+    so the panel reads as a trajectory rather than two dots on an empty field."""
+
+    interval_ms: int = 20
+    """Target wall-clock delay between animation frames (~50 fps)."""
+
+
+@dataclass(frozen=True)
+class SimConfig:
+    """Top-level configuration bundle."""
+
+    neuron: NeuronParams = field(default_factory=NeuronParams)
+    env: EnvParams = field(default_factory=EnvParams)
+    encoder: EncoderParams = field(default_factory=EncoderParams)
+    decoder: DecoderParams = field(default_factory=DecoderParams)
+    runner: RunnerParams = field(default_factory=RunnerParams)
+    viz: VizParams = field(default_factory=VizParams)
+
+    connectome: str = "mock12"
+    """Which connectome builder to use. See :mod:`flysim.brain.builders`."""
+
+    seed: int = 3
+    """Master seed for the brain's noise process."""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_json(cls, path: str | Path) -> SimConfig:
+        """Load a config, filling anything unspecified from the defaults above.
+
+        Only the sections present in the file are overridden, and only the keys present
+        within each section — so a config file can be three lines long.
+        """
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SimConfig:
+        sections = {
+            "neuron": NeuronParams,
+            "env": EnvParams,
+            "encoder": EncoderParams,
+            "decoder": DecoderParams,
+            "runner": RunnerParams,
+            "viz": VizParams,
+        }
+        kwargs: dict[str, Any] = {}
+        for name, klass in sections.items():
+            if name in data:
+                kwargs[name] = klass(**data[name])
+        for scalar in ("connectome", "seed"):
+            if scalar in data:
+                kwargs[scalar] = data[scalar]
+
+        unknown = set(data) - set(sections) - {"connectome", "seed", "_comment"}
+        if unknown:
+            raise ValueError(f"Unknown config section(s): {sorted(unknown)}")
+        return cls(**kwargs)
+
+    def with_overrides(self, **section_updates: dict[str, Any]) -> SimConfig:
+        """Return a copy with nested fields replaced, e.g.::
+
+            cfg.with_overrides(env={"predator_speed_ms": 0.9})
+        """
+        kwargs: dict[str, Any] = {}
+        for name, updates in section_updates.items():
+            current = getattr(self, name)
+            kwargs[name] = replace(current, **updates) if updates else current
+        return replace(self, **kwargs)

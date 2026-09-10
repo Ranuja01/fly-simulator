@@ -1,0 +1,7 @@
+# Starter Phase — everything `python main.py` needs. Nothing else.
+numpy>=1.24
+matplotlib>=3.7
+
+# Optional: only imported lazily by `--benchmark N` (large sparse connectome mode).
+# The default and synthetic120 paths never touch it.
+# scipy>=1.10
