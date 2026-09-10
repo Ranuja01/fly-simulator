@@ -133,7 +133,17 @@ class MotorCommand:
     """True on and after the step where the Giant Fiber fired."""
 
     triggered_now: bool = False
-    """True only on the single step where the escape first latched (edge, not level)."""
+    """True only on the single step where a takeoff first latched (edge, not level)."""
+
+    redirect: bool = False
+    """True when the escape command arrived while the agent is ALREADY escaping.
+
+    A body cannot start a jump with no legs on the ground, but it can steer once airborne
+    — banked turns mid-escape-flight are real. Separating the two lets a Giant Fiber spike
+    during flight change course instead of either relaunching the fly (which produced
+    hundreds of takeoffs a second) or being discarded (which left it unresponsive for the
+    whole ~1.2 s flight, ignoring a threat in its face).
+    """
 
     heading: np.ndarray | None = None
     """Unit vector of the intended takeoff direction, shape ``(D,)``. None until escape."""

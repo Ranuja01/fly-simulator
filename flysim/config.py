@@ -161,6 +161,11 @@ class EnvParams:
     fly_flight_duration_s: float = 0.85
     """How long powered flight lasts before the fly settles and lands."""
 
+    fly_max_turn_rate_deg_s: float = 900.0
+    """Cap on how fast the fly can change heading in flight. Escape turns are genuinely
+    fast — banked within tens of milliseconds — but not instantaneous, and a cap turns a
+    sequence of corrections into a curve rather than a zigzag."""
+
     fly_jump_decay_per_s: float = 11.0
     """How fast the takeoff impulse bleeds off toward cruise speed. High: the jump itself
     is brief."""
@@ -249,6 +254,12 @@ class DecoderParams:
     to fire at 455 Hz and produced 415 takeoffs in 20 seconds. The body is the right place
     to say a fly cannot jump twenty times a second.
     """
+
+    steer_refractory_ms: float = 45.0
+    """Minimum interval between mid-flight course corrections.
+
+    The Giant Fiber can spike ~90 times a second under a relentless loom; honouring every
+    one as a separate turn would be a seizure, not a flight path."""
 
     command_window_ms: float = 20.0
     """How long a single GF spike keeps commanding a takeoff. Makes the escape a

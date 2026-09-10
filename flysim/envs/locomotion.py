@@ -43,6 +43,7 @@ class EscapeFlight:
         self._elapsed = 0.0
         self._heading = np.array([1.0, 0.0])
         self._speed = 0.0
+        self._target_heading = None
         self.active = False
 
     def start(self, heading: np.ndarray, takeoff_speed: float) -> None:
@@ -52,12 +53,37 @@ class EscapeFlight:
             self._heading = self._heading / norm
         self._speed = float(takeoff_speed)
         self._elapsed = 0.0
+        self._target_heading = None
         self.active = True
+
+    def steer(self, heading: np.ndarray) -> None:
+        """Aim the flight somewhere new without restarting it.
+
+        Speed and phase are untouched: this is a course correction, not a second jump.
+        The turn itself is rate-limited in :meth:`velocity`.
+        """
+        target = np.asarray(heading, dtype=np.float64)
+        norm = float(np.linalg.norm(target))
+        if norm > 0:
+            self._target_heading = target / norm
 
     def velocity(self, dt_s: float) -> np.ndarray:
         """Advance the flight and return the current velocity vector."""
         p = self._p
         self._elapsed += dt_s
+
+        # Turn toward the requested heading, capped so corrections read as a banked curve.
+        if self._target_heading is not None:
+            current = np.arctan2(self._heading[1], self._heading[0])
+            desired = np.arctan2(self._target_heading[1], self._target_heading[0])
+            # Wrap the difference into [-pi, pi] so the fly turns the short way round.
+            delta = (desired - current + np.pi) % (2.0 * np.pi) - np.pi
+            limit = np.deg2rad(p.fly_max_turn_rate_deg_s) * dt_s
+            step = float(np.clip(delta, -limit, limit))
+            angle = current + step
+            self._heading = np.array([np.cos(angle), np.sin(angle)])
+            if abs(delta) <= limit:
+                self._target_heading = None
 
         if self._elapsed < p.fly_flight_duration_s:
             # Jump impulse decaying toward cruise — not toward zero.

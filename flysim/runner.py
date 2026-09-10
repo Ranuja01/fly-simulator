@@ -209,6 +209,7 @@ class SimulationRunner:
         state: BrainState | None = None
         command = MotorCommand(t=obs.t, escape=False)
         triggered_this_frame = False
+        redirected_this_frame = False
 
         frame_spikes = np.zeros(self.brain.size, dtype=bool)
 
@@ -216,6 +217,7 @@ class SimulationRunner:
             state = self.brain.step(packet.currents)
             command = self.decoder.decode(state, obs)
             triggered_this_frame |= command.triggered_now
+            redirected_this_frame |= command.redirect
             frame_spikes |= state.spikes
 
             store_voltage = self._substep_counter % decimation == 0
@@ -226,10 +228,14 @@ class SimulationRunner:
 
         assert state is not None  # substeps >= 1 is guaranteed by the constructor
 
-        # The decoder latches, so only the *first* substep of the frame reports
-        # `triggered_now`. Re-attach it to the frame-level command or the edge is lost.
+        # The environment is stepped ONCE per frame with the final substep's command, but
+        # both of these are single-substep edges. Without re-attaching them, an edge raised
+        # on any of the other substeps is silently dropped -- measured at 36 of 376 steering
+        # commands surviving before this was fixed.
         if triggered_this_frame and not command.triggered_now:
             command = replace(command, triggered_now=True)
+        if redirected_this_frame and not command.redirect:
+            command = replace(command, redirect=True)
 
         # Record the *first* takeoff only; later ones are re-arms of the same reflex.
         if triggered_this_frame and self.escape_frame is None:

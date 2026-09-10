@@ -60,7 +60,9 @@ class GiantFiberDecoder(BaseMotorDecoder):
         self._dispatched_spike_ms: float | None = None
         self._heading: np.ndarray | None = None
         self._takeoff_count = 0
+        self._steer_count = 0
         self._last_takeoff_ms: float | None = None
+        self._last_steer_ms: float | None = None
 
     @property
     def gf_spike_time_ms(self) -> float | None:
@@ -91,29 +93,39 @@ class GiantFiberDecoder(BaseMotorDecoder):
         # [spike + takeoff_delay, spike + takeoff_delay + command_window].
         escape = False
         triggered_now = False
+        redirect = False
         if self._pending_spike_ms is not None:
             since_spike = state.t_ms - self._pending_spike_ms
             if p.takeoff_delay_ms <= since_spike <= p.takeoff_delay_ms + p.command_window_ms:
                 escape = True
                 # The rising edge fires once per GF spike, never twice for the same one.
-                if self._dispatched_spike_ms != self._pending_spike_ms and self._can_take_off(
-                    state.t_ms, obs
-                ):
+                fresh = self._dispatched_spike_ms != self._pending_spike_ms
+                if fresh and self._can_take_off(state.t_ms, obs):
                     triggered_now = True
                     self._dispatched_spike_ms = self._pending_spike_ms
                     self._last_takeoff_ms = state.t_ms
                     self._takeoff_count += 1
+                elif fresh and obs.escaped and self._can_steer(state.t_ms):
+                    # Already in the air. The command cannot start a second jump, but it
+                    # can change where this one is going -- which is what keeps the fly
+                    # responsive to a threat that keeps chasing it mid-flight.
+                    redirect = True
+                    self._dispatched_spike_ms = self._pending_spike_ms
+                    self._last_steer_ms = state.t_ms
+                    self._steer_count += 1
 
         return MotorCommand(
             t=obs.t,
             escape=escape,
             triggered_now=triggered_now,
-            heading=self._heading if escape else None,
+            redirect=redirect,
+            heading=self._heading if (escape or redirect) else None,
             impulse=p.takeoff_speed_ms if escape else 0.0,
             raw={
                 "gf_first_spike_t_ms": self._first_spike_ms,
                 "gf_spike_count": int(state.spike_counts[self._trigger].sum()),
                 "takeoff_count": self._takeoff_count,
+                "steer_count": self._steer_count,
                 "awaiting_takeoff": (
                     self._pending_spike_ms is not None
                     and self._dispatched_spike_ms != self._pending_spike_ms
@@ -139,6 +151,16 @@ class GiantFiberDecoder(BaseMotorDecoder):
         if self._last_takeoff_ms is None:
             return True
         return (t_ms - self._last_takeoff_ms) >= self._p.takeoff_refractory_ms
+
+    def _can_steer(self, t_ms: float) -> bool:
+        """Rate-limit mid-flight course corrections.
+
+        The Giant Fiber can spike ~90 times a second under a relentless loom. Honouring
+        every one as a separate turn would be a seizure rather than a flight path.
+        """
+        if self._last_steer_ms is None:
+            return True
+        return (t_ms - self._last_steer_ms) >= self._p.steer_refractory_ms
 
     def _escape_heading(self, obs: EnvObservation) -> np.ndarray:
         """Unit vector away from the threat, rotated by the escape bias."""
