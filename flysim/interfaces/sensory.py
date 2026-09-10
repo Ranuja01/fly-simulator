@@ -26,9 +26,12 @@ Both terms earn their place:
   than growing without bound as the object arrives, giving the circuit a size reference as
   well as a rate one.
 
-``theta_dot`` is a finite difference between frames and therefore noisy -- badly so under
-mouse control -- so it is smoothed before use. That smoothing is a real modelling choice:
-too little and hand tremor reads as looming, too much and a genuine fast strike is blunted.
+``theta_dot`` is computed in closed form from the closing speed the environment already
+maintains, not by differencing ``theta`` between frames -- see :meth:`LoomingEncoder.encode`
+for why that distinction turned out to matter. A jump in the threat's position is rejected
+on SPEED rather than on expansion rate, because a speed threshold means the same thing at
+every distance while a rate threshold tightens as the object nears, discarding ordinary
+approaches at close range.
 
 Scaling to 3D: a MuJoCo or Minecraft environment would render an actual retinal image, and
 this class would be replaced by one that computes per-ommatidium contrast. It would emit
@@ -120,13 +123,19 @@ class LoomingEncoder(BaseSensoryEncoder):
             4.0 * size * float(obs.closing_speed) / (4.0 * distance**2 + size**2)
         )
 
-        # A teleporting threat still produces a spurious spike through the closing speed,
-        # so the discontinuity guard stays. Zero is the honest answer for a jump: it carries
-        # no information about whether the object is approaching, and clamping would instead
-        # report the maximum possible expansion rate, which reads as maximally threatening.
-        discontinuity = abs(raw_theta_dot) > p.max_expansion_rate_rad_s
+        # Teleport detection on SPEED, which is scale-independent: no real object in
+        # this arena moves at 6 m/s whatever its distance. Thresholding the expansion rate
+        # instead made the guard tighter the closer the threat got, discarding ordinary
+        # approaches at close range.
+        discontinuity = abs(float(obs.closing_speed)) > p.max_closing_speed_ms
         if discontinuity:
             raw_theta_dot = 0.0
+        else:
+            # Sensory ceiling, kept only so the arithmetic stays finite as d -> 0.
+            raw_theta_dot = float(
+                np.clip(raw_theta_dot, -p.max_expansion_rate_rad_s,
+                        p.max_expansion_rate_rad_s)
+            )
 
         # Light smoothing. The analytic form is already continuous across substeps, so this
         # only takes the edge off hand tremor rather than reconstructing a signal.

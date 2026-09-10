@@ -225,8 +225,26 @@ class EncoderParams:
     size, which is what gives the circuit a size-referenced threshold as well as a
     rate-referenced one."""
 
-    max_expansion_rate_rad_s: float = 12.0
-    """Rate above which a sample is treated as a DISCONTINUITY and discarded, rad/s.
+    max_closing_speed_ms: float = 6.0
+    """Closing speed above which a sample is treated as a DISCONTINUITY and discarded, m/s.
+
+    A teleport must be detected by something SCALE-INDEPENDENT. The first version of this
+    guard thresholded on expansion rate instead, which grows as the object gets nearer --
+    so the closer the threat, the more easily genuine motion was thrown away. Measured, it
+    rejected any approach faster than 0.52 m/s once a 120 mm object was within 40 mm,
+    which is an ordinary speed and a close-range blind spot of exactly the kind the
+    size-decay cap already had to fix.
+
+    Speed does not have that problem: no real object in this arena moves at 6 m/s, at any
+    distance, so the same number is correct everywhere."""
+
+    max_expansion_rate_rad_s: float = 400.0
+    """Ceiling on expansion rate, rad/s -- a SENSORY limit, not a teleport catcher.
+
+    Photoreceptors have finite temporal bandwidth, so there is a real biological ceiling on
+    how fast an edge can sweep the retina and still be resolved. Drosophila photoreceptors
+    are fast, well beyond human flicker fusion, so this sits high: it exists to keep the
+    arithmetic finite at d -> 0, not to reject plausible motion.
 
     A discontinuity is not a looming stimulus. When the threat jumps position -- the mouse
     entering the panel, a teleport, a dropped frame -- the finite difference reports an
