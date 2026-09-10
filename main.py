@@ -195,8 +195,13 @@ def run_check(config: SimConfig) -> int:
     packet = zero_runner.encoder.encode(zero_runner.observation, zero_runner.brain.size)
     require(np.all(np.isfinite(packet.currents)),
             "looming current stays finite at zero distance")
-    require(float(packet.currents.max()) == config.encoder.max_current_pa,
-            "looming drive saturates rather than overflowing")
+    # Bounded, not saturated. Under the expansion-rate drive a threat sitting at zero
+    # distance and NOT moving correctly produces zero current -- size alone is not a
+    # looming stimulus. The property worth asserting is that the drive stays inside its
+    # ceiling, which is what protects the engine from an overflow.
+    require(float(packet.currents.max()) <= config.encoder.max_current_pa,
+            f"looming drive stays within its ceiling "
+            f"({packet.currents.max():.1f} <= {config.encoder.max_current_pa} pA)")
     zero_results = zero_runner.run()
     require(
         bool(np.all(np.isfinite(zero_results[-1].state.voltages))),

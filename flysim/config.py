@@ -196,11 +196,41 @@ class EnvParams:
 class EncoderParams:
     """Looming (visual expansion) encoder parameters."""
 
-    gain_pa: float = 3.2
-    """Scales the dimensionless looming value into picoamps."""
+    gain_pa: float = 18.0
+    """Picoamps per unit of looming sensitivity. Calibrated so the drive spans roughly
+    the same range the previous size-based encoder did."""
 
-    steepness: float = 6.0
-    """``k`` in ``exp(k * l / d) - 1``. Higher = later, sharper escalation."""
+    size_decay_alpha: float = 1.0
+    """``alpha`` in ``eta = theta_dot * exp(-alpha * theta)``.
+
+    Without this term the drive would track expansion rate alone and grow without bound as
+    the object arrives. The decay makes the response peak at a characteristic angular
+    size, which is what gives the circuit a size-referenced threshold as well as a
+    rate-referenced one."""
+
+    max_expansion_rate_rad_s: float = 12.0
+    """Rate above which a sample is treated as a DISCONTINUITY and discarded, rad/s.
+
+    A discontinuity is not a looming stimulus. When the threat jumps position -- the mouse
+    entering the panel, a teleport, a dropped frame -- the finite difference reports an
+    essentially infinite rate and saturates LC4 from one sample, triggering an escape from
+    something that never approached.
+
+    Clamping the rate is not enough: a clamped jump still reports "expanding as fast as
+    anything possibly can", which is maximally threatening. The sample is therefore thrown
+    away and the rate reported as zero -- the honest answer, since a jump tells us nothing
+    about whether the object is approaching.
+
+    12 rad/s sits far above any genuine approach in this arena (a fast strike peaks near
+    3 rad/s) while still catching a teleport."""
+
+    theta_dot_smoothing: float = 0.7
+    """Exponential smoothing on the expansion rate, in [0, 1).
+
+    ``theta_dot`` is a finite difference between frames, so it inherits every jitter in the
+    threat's position -- and under mouse control that jitter is large. Smoothing over a few
+    frames keeps a genuine fast approach intact while stopping hand tremor from reading as
+    a looming stimulus."""
 
     max_current_pa: float = 140.0
     """Saturation ceiling. Real photoreceptor and LC4 responses saturate; this also

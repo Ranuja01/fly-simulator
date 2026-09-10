@@ -1,29 +1,34 @@
-"""Sensory interface: world geometry in, injected current out.
+r"""Sensory interface: world geometry in, injected current out.
 
 The looming cue
 ---------------
 An object of physical width ``l`` at distance ``d`` subtends an angle
 
-.. math::  \\theta = 2 \\arctan\\!\\left(\\frac{l}{2d}\\right)
+.. math::  \theta = 2 \arctan\!\left(\frac{l}{2d}\right)
 
-on the retina. As the object approaches at constant speed, ``theta`` grows slowly at
-first and then explosively — the signature that visual systems across the animal kingdom
-use to detect an impending collision. Locust LGMD/DCMD and *Drosophila* LC neurons are the
-classic examples.
+on the retina. What a looming-selective neuron responds to is not that angle but its
+**rate of change** -- the visual signature of an impending collision. This encoder uses the
+standard looming-sensitivity form
 
-This encoder produces an **exponential looming value**
+.. math::  \eta = \dot{\theta} \, e^{-\alpha \theta}
 
-.. math::  L = e^{k\\,l/d} - 1
+rectified so that only expansion counts.
 
-which is zero at infinite distance and rises steeply as ``d`` shrinks, then converts it to
-picoamps and injects it into the LC4 population.
+Both terms earn their place:
 
-A note on fidelity: the ethologically correct drive for a looming-selective neuron is the
-*rate of expansion* ``dtheta/dt``, not size itself — a large stationary object is not a
-threat. This encoder computes ``theta`` and ``theta_dot`` and reports both in the packet's
-``raw`` dict, so switching the drive term is a one-line change here and nothing downstream
-notices. The exponential form is used as the primary drive for the Starter Phase because
-it produces a clean monotone ramp that is easy to read on the telemetry panel.
+* ``theta_dot`` means a **stationary object produces no drive at all**, however large and
+  however close. An earlier version of this encoder drove LC4 from angular *size*, and a
+  60 mm object parked 50 mm away and never moved still made the fly flee -- which is not
+  what a fly does, and not what LC4 encodes.
+* The rectification means a **receding** object is ignored. Under a size-based drive,
+  something retreating still produced current, because magnitude carries no sign.
+* ``exp(-alpha * theta)`` makes the response peak at a characteristic angular size rather
+  than growing without bound as the object arrives, giving the circuit a size reference as
+  well as a rate one.
+
+``theta_dot`` is a finite difference between frames and therefore noisy -- badly so under
+mouse control -- so it is smoothed before use. That smoothing is a real modelling choice:
+too little and hand tremor reads as looming, too much and a genuine fast strike is blunted.
 
 Scaling to 3D: a MuJoCo or Minecraft environment would render an actual retinal image, and
 this class would be replaced by one that computes per-ommatidium contrast. It would emit
@@ -75,6 +80,7 @@ class LoomingEncoder(BaseSensoryEncoder):
     def reset(self) -> None:
         self._prev_theta: float | None = None
         self._prev_t: float | None = None
+        self._theta_dot: float = 0.0
 
     def encode(self, obs: EnvObservation, n_neurons: int) -> SensoryPacket:
         if n_neurons != self._n:
@@ -85,33 +91,43 @@ class LoomingEncoder(BaseSensoryEncoder):
 
         p = self._p
 
-        # Division-by-zero guard. `distance` legitimately reaches zero when the predator
-        # lands exactly on the fly, which is not an error condition — it is the most
+        # Division-by-zero guard. `distance` legitimately reaches zero when the threat
+        # lands exactly on the fly, which is not an error condition -- it is the most
         # threatening state possible. Clamp rather than raise.
         distance = max(float(obs.distance), p.min_distance_m)
-        ratio = float(obs.threat_size) / distance
 
-        # Overflow guard. exp(20) is ~4.9e8, comfortably finite in float32; without the
-        # clip, a small enough distance produces inf, then NaN voltages, and the failure
-        # appears far away from its cause.
-        exponent = float(np.clip(p.steepness * ratio, 0.0, p.max_exponent))
-
-        # expm1 rather than exp(x) - 1: at the small exponents that dominate early
-        # approach, the naive form loses most of its significant digits to cancellation.
-        loom = float(np.expm1(exponent))
-
-        raw_drive_pa = p.gain_pa * loom
-
-        # Angular size and its rate of change: reported for diagnostics and as the
-        # drop-in replacement drive term described in the module docstring.
+        # Angular subtense, and its rate of change: the actual looming cue.
         theta = 2.0 * float(np.arctan(obs.threat_size / (2.0 * distance)))
-        theta_dot = 0.0
+
+        raw_theta_dot = 0.0
         if self._prev_theta is not None and self._prev_t is not None:
             dt = obs.t - self._prev_t
             if dt > 0.0:
-                theta_dot = (theta - self._prev_theta) / dt
+                raw_theta_dot = (theta - self._prev_theta) / dt
         self._prev_theta = theta
         self._prev_t = obs.t
+
+        # Discard discontinuities rather than clamping them. A jump in the threat's
+        # position -- the mouse entering the panel, a teleport, a dropped frame -- is not an
+        # approach. Clamping would still report the maximum possible expansion rate, which
+        # reads as maximally threatening; zero is the honest answer, because a jump carries
+        # no information about whether the object is coming closer.
+        discontinuity = abs(raw_theta_dot) > p.max_expansion_rate_rad_s
+        if discontinuity:
+            raw_theta_dot = 0.0
+
+        # Smooth before use: a finite difference between frames carries every jitter in
+        # the threat's position straight into the neurons.
+        self._theta_dot = (
+            p.theta_dot_smoothing * self._theta_dot
+            + (1.0 - p.theta_dot_smoothing) * raw_theta_dot
+        )
+
+        # eta = theta_dot * exp(-alpha * theta), rectified. Expansion only: an object
+        # moving away has a negative rate and must not drive an escape.
+        expansion = max(self._theta_dot, 0.0)
+        eta = expansion * float(np.exp(-p.size_decay_alpha * theta))
+        raw_drive_pa = p.gain_pa * eta
 
         # Saturation is applied per neuron, *after* the receptive-field gain. Response
         # compression happens in each cell, so a strongly-driven LC4 can be at ceiling
@@ -127,12 +143,14 @@ class LoomingEncoder(BaseSensoryEncoder):
             t=obs.t,
             currents=currents,
             raw={
-                "loom": loom,
+                "loom": eta,
+                "theta_dot_smoothed": self._theta_dot,
                 "drive_pa": float(injected.mean()),
                 "drive_pa_max": float(injected.max()),
                 "distance_m": distance,
                 "theta_rad": theta,
-                "theta_dot_rad_s": theta_dot,
+                "theta_dot_rad_s": raw_theta_dot,
                 "saturated": bool(np.any(injected >= p.max_current_pa)),
+                "discontinuity": discontinuity,
             },
         )

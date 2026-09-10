@@ -44,24 +44,37 @@ are the same event.
 ## The escape threshold is emergent, not hardcoded
 
 There is no `if distance < X: escape` anywhere in this codebase. The reflex works because
-inhibition **saturates** and excitation does not: the inhibitory population is given a long
-refractory period, capping its output near 125 Hz, while the premotor pool can climb past
-400 Hz. At a slow approach, inhibition wins and the Giant Fiber sits below rest. As the
-loom sharpens, excitation outruns inhibition and GF crosses threshold.
+inhibition **saturates** and excitation does not: the inhibitory population has a long
+refractory period capping its output, while the premotor pool can climb far higher. At a
+slow approach inhibition wins and the Giant Fiber sits below rest; as the loom sharpens,
+excitation outruns inhibition and GF crosses threshold.
 
-The consequence, measured rather than tuned:
+LC4 is driven by the **rate of visual expansion**, not by how large something looks:
 
 ```
-escape triggers at an angular threat size of 24.6 degrees
+eta = theta_dot * exp(-alpha * theta)      rectified: expansion only
 ```
 
-which lands in the range reported for real *Drosophila* looming escapes — and a slow
-approach produces no escape at all:
+That distinction is doing real work. Measured, with the fly held still so only the
+object moves:
 
-```powershell
-python main.py --predator-speed 0.08     # GF never fires
-python main.py --predator-speed 1.20     # GF fires early, at ~38 degrees
-```
+| stimulus | LC4 drive | escape? |
+|---|---|---|
+| 60 mm object parked 50 mm away, motionless | 0.0 pA | no |
+| object moving **away** | 0.0 pA | no |
+| slow approach, 0.08 m/s | 1.4 pA | no |
+| normal approach, 0.40 m/s | 25.5 pA | **yes, at 40°** |
+| fast approach, 1.20 m/s | 29.8 pA | **yes, at 22°** |
+
+A stationary object produces *nothing*, however large and however close — which is the
+point: size is not a threat, approach is. A faster approach triggers at a smaller angle,
+i.e. further away.
+
+An earlier version drove LC4 from angular size instead, and fled from a wall that never
+moved. The angular threshold was pleasingly constant across object sizes under that
+model — but it was constant for the wrong reason, and it is not preserved here. Real
+looming responses depend on the ratio of object size to approach speed, so a
+size-dependent threshold is the less suspicious result.
 
 ## Commands
 
@@ -275,8 +288,8 @@ Stated plainly, because it is easy to imply otherwise:
   usable window is only about 2x wide. Do not read quantitative claims out of this model.
 * **Nothing here bears on consciousness.** It is a wiring diagram of a dead animal.
 
-What *is* emergent: the escape threshold, angular-size constancy, speed discrimination,
-and graded lesion response. Shuffling the connectome while holding every statistic
+What *is* emergent: the escape threshold itself, speed discrimination, and graded
+degradation under lesions. Shuffling the connectome while holding every statistic
 constant destroys the behaviour completely — 229 real LC4→DNp01 connections versus 0.
 
 ## Licence
