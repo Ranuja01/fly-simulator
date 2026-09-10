@@ -12,7 +12,7 @@
   },
 
   "encoder": {
-    "gain_pa": 18.0,
+    "gain_pa": 26.0,
     "size_decay_alpha": 1.0
   }
 }

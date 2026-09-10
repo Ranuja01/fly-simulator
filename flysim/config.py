@@ -196,9 +196,26 @@ class EnvParams:
 class EncoderParams:
     """Looming (visual expansion) encoder parameters."""
 
-    gain_pa: float = 18.0
-    """Picoamps per unit of looming sensitivity. Calibrated so the drive spans roughly
-    the same range the previous size-based encoder did."""
+    gain_pa: float = 26.0
+    """Picoamps per unit of looming sensitivity.
+
+    Calibrated against a discrimination battery rather than picked: it is the value at
+    which the circuit ignores a stationary object, a receding one, and a slow drift, while
+    fleeing a slow-but-committed approach that ends in contact, a normal approach and a
+    fast strike. At 18 a contact approach was ignored; at 34 a harmless slow drift set it
+    off. See tools/calibrate_pa.py for the same treatment of synaptic strength."""
+
+    size_decay_cap_deg: float = 90.0
+    """Angular size beyond which the decay term stops growing, degrees.
+
+    Without a cap, ``exp(-alpha * theta)`` keeps suppressing the response as the object
+    fills the visual field, so the drive PEAKS around 60 mm and then falls -- measured at
+    half its peak by the time the threat is 5 mm away. That makes the fly least responsive
+    exactly when something is on top of it, and creates a blind spot you can sit inside
+    and move freely.
+
+    Capping the decay keeps the early size-referencing while letting the expansion rate
+    carry the response the rest of the way in."""
 
     size_decay_alpha: float = 1.0
     """``alpha`` in ``eta = theta_dot * exp(-alpha * theta)``.

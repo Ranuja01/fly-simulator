@@ -138,7 +138,10 @@ class LoomingEncoder(BaseSensoryEncoder):
         # eta = theta_dot * exp(-alpha * theta), rectified. Expansion only: an object
         # moving away has a negative rate and must not drive an escape.
         expansion = max(self._theta_dot, 0.0)
-        eta = expansion * float(np.exp(-p.size_decay_alpha * theta))
+        # Decay is capped: past the cap the object already fills the visual field, and
+        # further suppression would make a closer threat matter less than a distant one.
+        decay_theta = min(theta, np.deg2rad(p.size_decay_cap_deg))
+        eta = expansion * float(np.exp(-p.size_decay_alpha * decay_theta))
         raw_drive_pa = p.gain_pa * eta
 
         # Saturation is applied per neuron, *after* the receptive-field gain. Response
