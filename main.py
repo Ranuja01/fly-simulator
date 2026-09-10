@@ -25,15 +25,13 @@ import numpy as np
 
 from flysim.brain.builders import build, build_benchmark
 from flysim.brain.lif import LIFBrain
-from flysim.config import SHIU_2024, SimConfig
+from flysim import calibration
+from flysim.config import SimConfig
 from flysim.envs.interactive2d import InteractiveEnvironment
 from flysim.envs.predator2d import Predator2DEnvironment
 from flysim.interfaces.motor import GiantFiberDecoder
 from flysim.interfaces.sensory import LoomingEncoder
 from flysim.runner import SimulationRunner
-
-REAL_CONNECTOMES = frozenset({"flywire", "neuprint"})
-"""Connectomes built from measured data, which get the published uniform LIF parameters."""
 
 INTERACTIVE_BRAIN_DT_MS = 0.4
 """Coarser timestep for interactive sessions. See config_from_args for the measurements."""
@@ -58,16 +56,18 @@ def build_runner(
     This function is the entire wiring diagram. Swapping the environment for a MuJoCo or
     Minecraft bridge means changing one line here; nothing else in the package moves.
     """
-    connectome = build(config.connectome, seed=config.seed, **(connectome_kwargs or {}))
+    # A connectome supplies anatomy; everything else comes from its calibration profile.
+    # Keeping these together per dataset is what stops one silently inheriting another's
+    # fit -- see flysim/calibration.py for why that is not hypothetical.
+    profile = calibration.for_connectome(config.connectome)
+    kwargs = dict(connectome_kwargs or {})
+    if profile.pa_per_synapse is not None:
+        kwargs.setdefault("pa_per_synapse", profile.pa_per_synapse)
 
-    # Real connectomes run the published uniform parameter set; the hand-built mock keeps
-    # the per-population biophysics it was designed around. Mixing them would let invented
-    # parameters shape behaviour that is supposed to come from measured anatomy.
-    neuron_params = config.neuron
-    if config.connectome in REAL_CONNECTOMES:
-        neuron_params = SHIU_2024
-        print(f"  neuron model: Shiu et al. 2024 uniform parameters "
-              f"(tau_m {neuron_params.tau_m_ms} ms, V_th {neuron_params.v_threshold_mv} mV)")
+    connectome = build(config.connectome, seed=config.seed, **kwargs)
+    config = config.with_overrides(encoder={"gain_pa": profile.encoder_gain_pa})
+    neuron_params = profile.neuron
+    print(calibration.describe(profile))
 
     brain = LIFBrain(
         connectome,
@@ -159,7 +159,7 @@ def run_check(config: SimConfig, connectome_kwargs: dict | None = None) -> int:
             failures.append(message)
 
     print(f"\n=== acceptance: default escape ({config.connectome}) ===")
-    runner = build_runner(config)
+    runner = build_runner(config, connectome_kwargs=connectome_kwargs)
     runner.run()
     s = runner.summary()
 
