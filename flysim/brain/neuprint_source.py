@@ -50,6 +50,9 @@ from flysim.brain.credentials import get_token
 from flysim.brain.loaders import DEFAULT_MIN_SYNAPSES, cache_root
 
 NEUPRINT_SERVER = "neuprint.janelia.org"
+
+VOXEL_NM = 8.0
+"""Nanometres per unit of ``somaLocation``. Inferred from the resulting extent."""
 DEFAULT_DATASET = "male-cns:v1.0"
 
 ESCAPE_SEED_TYPES: tuple[str, ...] = ("LC4", "LPLC2", "DNp01", "TTMn", "PSI")
@@ -213,7 +216,7 @@ def fetch_subnetwork(
     neurons = client.fetch_custom(
         f"MATCH (n:Neuron) WHERE n.bodyId IN [{ids}] "
         f"RETURN n.bodyId AS bodyId, n.type AS type, n.superclass AS superclass, "
-        f"n.consensusNt AS nt, n.somaSide AS side"
+        f"n.consensusNt AS nt, n.somaSide AS side, n.somaLocation AS soma"
     )
     connections = client.fetch_custom(
         f"MATCH (a:Neuron)-[w:ConnectsTo]->(b:Neuron) "
@@ -221,6 +224,26 @@ def fetch_subnetwork(
         f"AND w.weight >= {min_synapses} "
         f"RETURN a.bodyId AS pre, b.bodyId AS post, w.weight AS weight"
     )
+    # somaLocation arrives as a GeoJSON-ish dict; flatten to plain columns so the
+    # cached Parquet stays simple and readable.
+    def _xyz(value, axis):
+        if isinstance(value, dict):
+            coords = value.get("coordinates")
+            if coords and len(coords) == 3:
+                # NeuPrint stores somaLocation in dataset voxels, not nanometres.
+                # At 8 nm/voxel the full extent works out to ~730 um across brain and
+                # nerve cord, which is right for a Drosophila CNS; reading them as
+                # nanometres gives 91 um, which is far too small for the animal.
+                return float(coords[axis]) * VOXEL_NM / 1000.0
+        return np.nan
+
+    if "soma" in neurons.columns:
+        for axis, name in enumerate(("x", "y", "z")):
+            neurons[name] = neurons["soma"].map(lambda v, a=axis: _xyz(v, a))
+        neurons = neurons.drop(columns=["soma"])
+        located = int(neurons["x"].notna().sum())
+        print(f"  soma coordinates for {located:,}/{len(neurons):,} neurons")
+
     print(f"  fetched {len(neurons):,} neurons, {len(connections):,} edges")
 
     directory.mkdir(parents=True, exist_ok=True)
@@ -290,6 +313,9 @@ def build_neuprint(
         # np.add.at accumulates duplicates rather than overwriting.
         np.add.at(weights, (rows[nonzero], cols[nonzero]), data[nonzero])
 
+    have_xyz = all(c in neurons.columns for c in ("x", "y", "z"))
+    positions = np.full((n, 3), np.nan, dtype=np.float64) if have_xyz else None
+
     labels: list[str] = []
     populations: dict[str, list[int]] = {}
     for i, body in enumerate(ids):
@@ -300,6 +326,9 @@ def build_neuprint(
             cell_type, superclass, nt = "unknown", "", "unclear"
         labels.append(f"{cell_type}:{body}")
         populations.setdefault(assign_population(cell_type, superclass, nt), []).append(i)
+        if positions is not None and body in neurons.index:
+            row = neurons.loc[body]
+            positions[i] = (row["x"], row["y"], row["z"])
 
     population_arrays = {k: np.asarray(v, np.int64) for k, v in populations.items()}
     for required in ("LC4", "GF"):
@@ -316,11 +345,17 @@ def build_neuprint(
     if "MOTOR" in population_arrays:
         print("  MOTOR population present: the Giant Fiber's output is readable, not invented")
 
+    if positions is not None:
+        located = int(np.isfinite(positions[:, 0]).sum())
+        print(f"  positions for {located:,}/{n:,} neurons "
+              f"(brain and nerve cord, so the panel spans the whole CNS)")
+
     return Connectome(
         name=f"neuprint-{dataset}",
         labels=tuple(labels),
         weights=weights,
         populations=population_arrays,
+        positions=positions,
         param_overrides={},
         description=(
             f"NeuPrint {dataset}, seeded from {list(seed_types)}, {hops} hop(s). "

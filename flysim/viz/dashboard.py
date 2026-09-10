@@ -292,13 +292,24 @@ class Dashboard:
         self._brain_context_xyz = (
             np.asarray(context, dtype=np.float64) - origin if context is not None else None
         )
+        # Which axis goes up the screen depends on what the dataset covers. A brain
+        # volume is widest left-to-right and the conventional view is face-on, so y is
+        # vertical. A whole CNS additionally spans the body axis from brain down to nerve
+        # cord -- and that axis is the entire point, since it is what separates the Giant
+        # Fiber from the motor neurons it drives. Choosing it by extent rather than
+        # hard-coding keeps both correct: FlyWire's brain spans y 380 um against z 277,
+        # while the male CNS spans z 120 against y 61.
+        spans = np.nanmax(self._brain_xyz, axis=0) - np.nanmin(self._brain_xyz, axis=0)
+        self._brain_vertical = 2 if spans[2] > spans[1] else 1
+        depth_axis = 1 if self._brain_vertical == 2 else 2
+
         cos_a, sin_a = np.cos(BRAIN_VIEW_YAW_RAD), np.sin(BRAIN_VIEW_YAW_RAD)
         self._brain_px = (
-            self._brain_xyz[:, 0] * cos_a + self._brain_xyz[:, 2] * sin_a
+            self._brain_xyz[:, 0] * cos_a + self._brain_xyz[:, depth_axis] * sin_a
         )
-        self._brain_py = self._brain_xyz[:, 1]
+        self._brain_py = self._brain_xyz[:, self._brain_vertical]
         self._brain_depth = (
-            -self._brain_xyz[:, 0] * sin_a + self._brain_xyz[:, 2] * cos_a
+            -self._brain_xyz[:, 0] * sin_a + self._brain_xyz[:, depth_axis] * cos_a
         )
 
         measured = "flywire" in connectome.name or "neuprint" in connectome.name
@@ -316,12 +327,13 @@ class Dashboard:
         if self._brain_context_xyz is not None:
             extent = np.vstack([extent, self._brain_context_xyz])
         # Horizontal extent of the fixed projection.
+        depth_axis = 1 if self._brain_vertical == 2 else 2
         projected_x = np.abs(
             extent[:, 0] * np.cos(BRAIN_VIEW_YAW_RAD)
-            + extent[:, 2] * np.sin(BRAIN_VIEW_YAW_RAD)
+            + extent[:, depth_axis] * np.sin(BRAIN_VIEW_YAW_RAD)
         )
         horizontal = float(np.percentile(projected_x, 99.5))
-        vertical = float(np.percentile(np.abs(extent[:, 1]), 99.5))
+        vertical = float(np.percentile(np.abs(extent[:, self._brain_vertical]), 99.5))
         radius = max(horizontal, vertical) * 1.08
         ax.set_xlim(-radius, radius)
         ax.set_ylim(radius, -radius)   # inverted: dorsal up, matching anatomical figures
