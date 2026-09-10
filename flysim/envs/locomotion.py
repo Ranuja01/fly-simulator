@@ -57,15 +57,31 @@ class EscapeFlight:
         self.active = True
 
     def steer(self, heading: np.ndarray) -> None:
-        """Aim the flight somewhere new without restarting it.
+        """Re-aim AND re-power a flight already in progress.
 
-        Speed and phase are untouched: this is a course correction, not a second jump.
-        The turn itself is rate-limited in :meth:`velocity`.
+        Two distinct actuators, and conflating them was a real bug. The *jump* uses the
+        legs and needs ground, so it cannot repeat mid-air. Flight uses the **wings**,
+        which work perfectly well in the air — so a fly under continued threat keeps
+        flying rather than coasting to a halt.
+
+        Re-aiming alone left a hole: powered flight ends after
+        ``fly_flight_duration_s``, and the fly then decelerates while still airborne and
+        therefore still unable to jump. Measured at 0.4 s of continuous travel below
+        0.15 m/s at the tail of every flight -- long enough to sit on top of it and wait.
+        Restoring the phase timer and the cruise speed closes that window, and means a fly
+        that is still being chased simply does not land.
+
+        The turn itself stays rate-limited in :meth:`velocity`, so this reads as a banked
+        curve rather than a teleport.
         """
         target = np.asarray(heading, dtype=np.float64)
         norm = float(np.linalg.norm(target))
         if norm > 0:
             self._target_heading = target / norm
+
+        # Sustained threat means sustained powered flight.
+        self._elapsed = 0.0
+        self._speed = max(self._speed, self._p.fly_cruise_speed_ms)
 
     def velocity(self, dt_s: float) -> np.ndarray:
         """Advance the flight and return the current velocity vector."""
