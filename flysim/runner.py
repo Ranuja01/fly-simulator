@@ -185,6 +185,7 @@ class SimulationRunner:
         self.escape_frame: int | None = None
         self.escape_t_s: float | None = None
         self.escape_distance_m: float | None = None
+        self.escape_threat_size_m: float | None = None
 
         packet = self.encoder.encode(self.observation, self.brain.size)
         state = BrainState(
@@ -235,6 +236,11 @@ class SimulationRunner:
             self.escape_frame = self.frame_index
             self.escape_t_s = obs.t
             self.escape_distance_m = obs.distance
+            # Capture the threat's size AT the escape. Reading it from the config
+            # instead reports the wrong angle whenever the object can be resized --
+            # a 120 mm object at 173 mm subtends 38 deg, not the 6.6 deg the 20 mm
+            # config default implies.
+            self.escape_threat_size_m = obs.threat_size
 
         self.observation = self.env.step(command, self.frame_dt_s)
         self.frame_index += 1
@@ -276,7 +282,8 @@ class SimulationRunner:
         # worth comparing against the literature.
         theta_deg = None
         if self.escape_distance_m is not None and self.escape_distance_m > 0:
-            half = self.config.env.threat_size_m / (2.0 * self.escape_distance_m)
+            size = self.escape_threat_size_m or self.config.env.threat_size_m
+            half = size / (2.0 * self.escape_distance_m)
             theta_deg = float(np.rad2deg(2.0 * np.arctan(half)))
 
         return {

@@ -241,3 +241,46 @@ This is a **model**, and its simplifications are deliberate and labelled in the 
   correct `dθ/dt` and reports it in `SensoryPacket.raw`, so switching is one line.
 
 Where the code departs from biology, the comment says so. Please keep that convention.
+
+## Acknowledgements
+
+This project is code only. **No connectome data is redistributed here** — the loaders read
+files you download yourself, cached outside the repository.
+
+**Connectome data.** [FlyWire](https://flywire.ai) / FAFB v783, obtained through
+[Codex](https://codex.flywire.ai). The reconstruction is the work of the FlyWire
+community and the Princeton, Cambridge and Janelia connectomics groups. If you publish
+anything using this data, follow FlyWire's own
+[citation guidelines](https://codex.flywire.ai) — those obligations attach to the data,
+not to this code, and they are not waived by the MIT licence below.
+
+**Neuron model.** The uniform leaky integrate-and-fire parameters used for real
+connectomes (`SHIU_2024` in `flysim/config.py`) follow Shiu et al., *Nature* (2024).
+
+**Inspiration.** The idea came from seeing a fly connectome driven inside Minecraft
+([blendi-remade/fly-brain-minecraft](https://github.com/blendi-remade/fly-brain-minecraft)),
+which uses the male CNS dataset and decodes real descending and motor neurons — a good
+deal further along than this on motor output.
+
+## What this model does not do
+
+Stated plainly, because it is easy to imply otherwise:
+
+* **The fly decides; the code moves it.** The Giant Fiber's output is one bit — fire or
+  don't. Escape direction, flight kinematics, landing and all walking are scripted, and
+  labelled as such in the source.
+* **FAFB is brain-only.** The Giant Fiber's motor targets (TTMn, PSI) live in the ventral
+  nerve cord and are not in this dataset, so movement *cannot* be neurally generated here.
+* **The synaptic scaling is uncalibrated.** A connectome gives anatomy, not physiology.
+  `pa_per_synapse` is fitted to produce a correctly gated reflex, not measured — and the
+  usable window is only about 2x wide. Do not read quantitative claims out of this model.
+* **Nothing here bears on consciousness.** It is a wiring diagram of a dead animal.
+
+What *is* emergent: the escape threshold, angular-size constancy, speed discrimination,
+and graded lesion response. Shuffling the connectome while holding every statistic
+constant destroys the behaviour completely — 229 real LC4→DNp01 connections versus 0.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE). The licence covers this code. It does not cover the
+connectome data, which carries its own terms.

@@ -236,6 +236,20 @@ class DecoderParams:
     """Initial takeoff velocity. Chosen so the getaway is decisive against the default
     predator speed rather than merely buying a few centimetres."""
 
+    takeoff_refractory_ms: float = 120.0
+    """Minimum interval between takeoffs, on top of "not while airborne".
+
+    A fly cannot jump again the instant it lands: the short-mode escape needs a
+    preparatory postural adjustment before the jump muscle can fire usefully.
+
+    This is a MOTOR constraint, deliberately enforced here rather than by lengthening the
+    Giant Fiber's refractory period. The hand-built circuit gives GF a 60 ms refractory to
+    make it all-or-none, but real connectomes run uniform published biophysics precisely so
+    that invented per-neuron parameters cannot shape their behaviour -- which left GF free
+    to fire at 455 Hz and produced 415 takeoffs in 20 seconds. The body is the right place
+    to say a fly cannot jump twenty times a second.
+    """
+
     command_window_ms: float = 20.0
     """How long a single GF spike keeps commanding a takeoff. Makes the escape a
     re-armable reflex: the decoder does not latch permanently, so a second GF spike later

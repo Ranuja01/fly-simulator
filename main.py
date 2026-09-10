@@ -175,7 +175,15 @@ def run_check(config: SimConfig) -> int:
     if first["PMN"] is not None and first["GF"] is not None:
         require(first["GF"] > first["PMN"],
                 f"GF fires after the premotor pool ({first['PMN']:.1f} ms)")
-    require(s["active_substeps"]["GF"] == 1, "GF spikes exactly once (all-or-none)")
+    # All-or-none is a claim about BEHAVIOUR, not about spike count. The mock circuit's
+    # GF fires exactly once only because it was given a 60 ms refractory period; a real
+    # connectome runs uniform 2.2 ms biophysics and its GF bursts during a strong loom.
+    # The escape is still all-or-none, because a fly cannot take off while airborne -- which
+    # is enforced in the motor decoder, where a body constraint belongs. Asserting the spike
+    # count would be asserting a property of my own hand-tuning.
+    gf_spikes = s["active_substeps"]["GF"]
+    require(s["takeoffs"] == 1,
+            f"escape is all-or-none behaviourally: 1 takeoff from {gf_spikes} GF spike(s)")
 
     theta = s["escape_angular_size_deg"]
     require(theta is not None and 5.0 < theta < 90.0,

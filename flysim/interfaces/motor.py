@@ -60,6 +60,7 @@ class GiantFiberDecoder(BaseMotorDecoder):
         self._dispatched_spike_ms: float | None = None
         self._heading: np.ndarray | None = None
         self._takeoff_count = 0
+        self._last_takeoff_ms: float | None = None
 
     @property
     def gf_spike_time_ms(self) -> float | None:
@@ -95,9 +96,12 @@ class GiantFiberDecoder(BaseMotorDecoder):
             if p.takeoff_delay_ms <= since_spike <= p.takeoff_delay_ms + p.command_window_ms:
                 escape = True
                 # The rising edge fires once per GF spike, never twice for the same one.
-                if self._dispatched_spike_ms != self._pending_spike_ms:
+                if self._dispatched_spike_ms != self._pending_spike_ms and self._can_take_off(
+                    state.t_ms, obs
+                ):
                     triggered_now = True
                     self._dispatched_spike_ms = self._pending_spike_ms
+                    self._last_takeoff_ms = state.t_ms
                     self._takeoff_count += 1
 
         return MotorCommand(
@@ -116,6 +120,25 @@ class GiantFiberDecoder(BaseMotorDecoder):
                 ),
             },
         )
+
+    def _can_take_off(self, t_ms: float, obs: EnvObservation) -> bool:
+        """Is the body physically able to jump right now?
+
+        Two constraints, both about the body rather than the brain:
+
+        * **Already airborne.** A fly in flight has nothing to push against. Without this
+          the Giant Fiber keeps firing during flight and every spike re-launches the fly.
+        * **Just landed.** The short-mode escape needs a brief postural reset.
+
+        The Giant Fiber is left free to spike whenever the circuit says it should -- those
+        spikes still appear in the telemetry. What is gated here is the *takeoff*, which
+        is the honest place to gate it.
+        """
+        if obs.escaped:
+            return False
+        if self._last_takeoff_ms is None:
+            return True
+        return (t_ms - self._last_takeoff_ms) >= self._p.takeoff_refractory_ms
 
     def _escape_heading(self, obs: EnvObservation) -> np.ndarray:
         """Unit vector away from the threat, rotated by the escape bias."""
