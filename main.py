@@ -144,7 +144,7 @@ def run_benchmark(size: int, config: SimConfig, steps: int = 500) -> int:
     return 0
 
 
-def run_check(config: SimConfig) -> int:
+def run_check(config: SimConfig, connectome_kwargs: dict | None = None) -> int:
     """Headless acceptance test. Returns a process exit code.
 
     Asserts the behaviour the Starter Phase is supposed to demonstrate, so a change that
@@ -172,9 +172,19 @@ def run_check(config: SimConfig) -> int:
     if first["LC4"] is not None and first["GF"] is not None:
         require(first["GF"] > first["LC4"],
                 f"GF ({first['GF']:.1f} ms) fires after LC4 ({first['LC4']:.1f} ms)")
-    if first["PMN"] is not None and first["GF"] is not None:
+    if first.get("PMN") is not None and first["GF"] is not None:
         require(first["GF"] > first["PMN"],
                 f"GF fires after the premotor pool ({first['PMN']:.1f} ms)")
+
+    # Only a CNS dataset has motor neurons at all; on a brain-only connectome the Giant
+    # Fiber's targets are outside the volume and there is nothing downstream to check.
+    if "MOTOR" in first:
+        if first["MOTOR"] is not None and first["GF"] is not None:
+            require(first["MOTOR"] >= first["GF"],
+                    f"motor neurons fire after GF "
+                    f"({first['MOTOR']:.1f} ms vs {first['GF']:.1f} ms)")
+        else:
+            require(False, "motor neurons fire when the Giant Fiber does")
     # All-or-none is a claim about BEHAVIOUR, not about spike count. The mock circuit's
     # GF fires exactly once only because it was given a 60 ms refractory period; a real
     # connectome runs uniform 2.2 ms biophysics and its GF bursts during a strong loom.
@@ -191,7 +201,7 @@ def run_check(config: SimConfig) -> int:
 
     print("\n=== edge case: predator spawns exactly on the fly (d = 0) ===")
     zero = config.with_overrides(env={"predator_start_distance_m": 0.0})
-    zero_runner = build_runner(zero)
+    zero_runner = build_runner(zero, connectome_kwargs=connectome_kwargs)
     packet = zero_runner.encoder.encode(zero_runner.observation, zero_runner.brain.size)
     require(np.all(np.isfinite(packet.currents)),
             "looming current stays finite at zero distance")
@@ -212,7 +222,7 @@ def run_check(config: SimConfig) -> int:
     slow = config.with_overrides(
         env={"predator_speed_ms": 0.08, "duration_s": 6.0}
     )
-    slow_runner = build_runner(slow)
+    slow_runner = build_runner(slow, connectome_kwargs=connectome_kwargs)
     slow_runner.run()
     slow_summary = slow_runner.summary()
     require(slow_summary["first_spike_ms"]["GF"] is None,
@@ -322,9 +332,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.benchmark is not None:
         return run_benchmark(args.benchmark, config)
 
-    if args.check:
-        return run_check(config)
-
     connectome_kwargs: dict = {}
     if config.connectome == "flywire":
         connectome_kwargs = {
@@ -342,6 +349,9 @@ def main(argv: list[str] | None = None) -> int:
                              "max_neurons": args.flywire_max_neurons}
         if args.flywire_pa is not None:
             connectome_kwargs["pa_per_synapse"] = args.flywire_pa
+
+    if args.check:
+        return run_check(config, connectome_kwargs)
 
     if args.interactive and args.no_show:
         parser_error = "--interactive needs a window; it cannot be combined with --no-show."
