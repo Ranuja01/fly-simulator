@@ -33,11 +33,28 @@ from flysim.envs.locomotion import EscapeFlight, WalkingFly
 
 _COINCIDENT_EPS = 1e-9
 
-# Mouse motion arrives as discrete jumps between rendered frames, and differentiating that
-# directly produces a violently spiky velocity. Since closing speed feeds the looming
-# computation, that noise would reach the neurons. An exponential filter over roughly
-# three frames is enough to make it usable without hiding a real fast approach.
-_VELOCITY_SMOOTHING = 0.65
+# Mouse motion arrives as discrete jumps, and differentiating that directly produces a
+# spiky velocity. Since closing speed feeds the looming computation, that noise would
+# reach the neurons. This is deliberately light -- about one and a half pointer updates.
+# It used to be 0.65, which was compensating for the substep inflation `_track_pointer`
+# now removes; with the measurement corrected, the extra smoothing only bought lag, and
+# lag shows up directly as a fast approach being spotted LATER than a slow one. Measured
+# on the 22,973-neuron male CNS -- detection distance for a 20 mm head-on approach at
+# 2 / 3 / 5 m/s: 115 / 115 / 55 mm at 0.35, against 75 / 55 / never at 0.65. The encoder's
+# own `theta_dot_smoothing` handles what is left of the tremor.
+_VELOCITY_SMOOTHING = 0.35
+
+# The pointer only changes when the mouse handler fires, which is far less often than
+# `step` runs. These bound how the gap between updates is interpreted -- see
+# `InteractiveEnvironment._track_pointer`.
+_POINTER_MAX_GAP_S = 0.06
+"""Longest interval a single pointer displacement may be divided by."""
+
+_POINTER_IDLE_S = 0.05
+"""No movement for longer than this is read as a hand that has stopped, not a gap."""
+
+_POINTER_DECAY_TAU_S = 0.03
+"""Time constant the held velocity decays with once the pointer is judged stopped."""
 
 MIN_THREAT_SIZE_M = 0.004
 MAX_THREAT_SIZE_M = 0.120
@@ -108,6 +125,8 @@ class InteractiveEnvironment(BaseEnvironment):
         self._target = self._threat_pos.copy()
         self._threat_vel = np.zeros(2, dtype=np.float64)
         self._threat_size = self._p.threat_size_m
+        self._pointer_gap_s = 0.0
+        self._pointer_idle_s = 0.0
 
         self._t = 0.0
         self._step_index = 0
@@ -138,16 +157,11 @@ class InteractiveEnvironment(BaseEnvironment):
             self._fly_vel = self._walk.velocity(dt_s)
             self._fly_pos = self._fly_pos + self._fly_vel * dt_s
 
-        # Threat follows the cursor. Velocity comes from the actual displacement, so a
-        # fast flick really is a fast approach as far as the looming encoder is concerned.
+        # Threat follows the cursor. Velocity is measured over the interval since the
+        # pointer last actually moved, not per environment step -- see _track_pointer.
         previous = self._threat_pos.copy()
         self._threat_pos = self._target.copy()
-        if dt_s > 0:
-            instantaneous = (self._threat_pos - previous) / dt_s
-            self._threat_vel = (
-                _VELOCITY_SMOOTHING * self._threat_vel
-                + (1.0 - _VELOCITY_SMOOTHING) * instantaneous
-            )
+        self._track_pointer(self._threat_pos - previous, dt_s)
 
         lo, hi = self._bounds[:, 0], self._bounds[:, 1]
         hit = (self._fly_pos < lo) | (self._fly_pos > hi)
@@ -162,6 +176,47 @@ class InteractiveEnvironment(BaseEnvironment):
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _track_pointer(self, delta: np.ndarray, dt_s: float) -> None:
+        """Estimate pointer velocity independently of how many substeps a frame has.
+
+        The pointer changes only when the mouse handler fires, while ``step`` runs several
+        times per rendered frame (five, interactively). Dividing each step's displacement
+        by that step's own ``dt`` therefore reports a whole frame's worth of motion as if
+        it had happened inside a single 4 ms step, inflating the apparent speed by roughly
+        ``steps_per_frame * (1 - smoothing)``. Measured: a hand moving 5 m/s read as
+        9.9 m/s, which is past the encoder's teleport guard -- so the fastest and most
+        threatening approaches were precisely the ones being discarded as implausible, and
+        a hard charge at the fly did nothing while a gentler one triggered an escape.
+
+        Dividing by the time since the pointer last moved gives the same answer at any
+        substep rate, which is the property that was missing.
+        """
+        if dt_s <= 0:
+            return
+
+        if np.any(delta):
+            # The interval is capped. A genuine discontinuity -- the pointer leaving the
+            # axes and re-entering somewhere else -- must still read as an enormous speed
+            # so the encoder rejects it, rather than being spread across however long the
+            # pointer was away and arriving as a plausible approach.
+            elapsed = min(self._pointer_gap_s + dt_s, _POINTER_MAX_GAP_S)
+            self._threat_vel = (
+                _VELOCITY_SMOOTHING * self._threat_vel
+                + (1.0 - _VELOCITY_SMOOTHING) * (delta / elapsed)
+            )
+            self._pointer_gap_s = 0.0
+            self._pointer_idle_s = 0.0
+            return
+
+        # No movement this step is ambiguous: it is either the gap between two mouse
+        # events or a hand that has stopped. Hold the estimate briefly, then decay it.
+        # Decaying at once would make a steady drag stutter; never decaying would leave a
+        # parked pointer looming at the fly forever.
+        self._pointer_gap_s += dt_s
+        self._pointer_idle_s += dt_s
+        if self._pointer_idle_s > _POINTER_IDLE_S:
+            self._threat_vel *= float(np.exp(-dt_s / _POINTER_DECAY_TAU_S))
 
     def _observe(self) -> EnvObservation:
         offset = self._threat_pos - self._fly_pos
