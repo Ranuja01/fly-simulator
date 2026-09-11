@@ -63,6 +63,15 @@ class Connectome:
     description: str = ""
     """Human-readable provenance. Say where the numbers came from and what is invented."""
 
+    hemisphere: Any = None
+    """Optional ``(N,)`` array of -1 (left), +1 (right) or 0 (unknown/midline).
+
+    Measured, not inferred: taken from the dataset's own ``side`` field. It is here rather
+    than in a population because it cuts across every population -- an LC4 cell, a
+    descending neuron and a motor neuron all have a side, and a sensory encoder needs to
+    know which eye a visual cell belongs to without knowing anything else about it.
+    """
+
     positions: Any = None
     """Optional ``(N, D)`` anatomical coordinates in micrometres, or None.
 

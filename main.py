@@ -56,6 +56,7 @@ def build_runner(
     connectome_kwargs: dict | None = None,
     interactive: bool = False,
     motion: bool = False,
+    retinotopy: bool = False,
 ) -> SimulationRunner:
     """Assemble the four layers into a runnable simulation.
 
@@ -92,9 +93,20 @@ def build_runner(
         InteractiveEnvironment(config.env) if interactive
         else Predator2DEnvironment(config.env)
     )
+    if retinotopy:
+        config = config.with_overrides(encoder={"hemifield_tuning": 1.0})
     encoder: BaseSensoryEncoder = LoomingEncoder(
-        config.encoder, brain.populations, brain.size
+        config.encoder, brain.populations, brain.size,
+        hemisphere=getattr(connectome, "hemisphere", None),
     )
+    if retinotopy:
+        h = getattr(connectome, "hemisphere", None)
+        if h is None:
+            print("  note: this connectome records no sides; --retinotopy has no effect")
+        else:
+            t = brain.populations[config.encoder.target_population]
+            print(f"  hemifield tuning ON: {int((h[t] < 0).sum())} left-eye and "
+                  f"{int((h[t] > 0).sum())} right-eye cells tuned separately")
 
     # A second modality. Looming reports approach and nothing else, so an object circling
     # the fly is invisible to it; T4/T5 report the sweep across the eye. They are already
@@ -308,6 +320,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                              "Defaults to $FLYSIM_CACHE_DIR/flywire/<version>.")
     parser.add_argument("--flywire-version", type=str, default="v783",
                         help="FlyWire public release to load.")
+    parser.add_argument("--retinotopy", action="store_true",
+                        help="Tune looming drive to the eye that can see the threat, so "
+                             "direction reaches the neurons instead of being discarded.")
     parser.add_argument("--motion", action="store_true",
                         help="Also drive the T4/T5 motion detectors, so the fly can see "
                              "an object sweeping past it and not only one approaching.")
@@ -423,6 +438,7 @@ def main(argv: list[str] | None = None) -> int:
         connectome_kwargs=connectome_kwargs,
         interactive=args.interactive,
         motion=args.motion,
+        retinotopy=args.retinotopy,
     )
     print(runner.brain.connectome.summary())
 

@@ -360,6 +360,63 @@ code.
 should overcome the 71-versus-55 handicap and make the right Giant Fiber fire first. If it
 cannot, the map is not carrying enough signal to matter and should be rejected.
 
+**Baseline and noise floor, measured before the work.** Under the current uniform drive the
+descending pairs carry no bearing information, as they cannot: the encoder's output is a
+function of distance, closing speed and threat size only, so azimuth never reaches them.
+Repeating the *same* bearing four times gives a left-minus-right first-spike spread of
+roughly 30 ms (DNp04: -28, -44, -56, -48). Apparent differences between bearings sit inside
+that band, except at bearings pointing toward the threat's parked corner, where a shorter
+startup jump changes the transient.
+
+So **any retinotopic effect must exceed about 30-40 ms of run-to-run jitter to count**, and
+the test is a change of *sign* — which side leads — rather than a change of magnitude.
+
+### Hemifield-based tuning with a curve-based falloff
+
+The first mechanism in this model by which direction reaches the neurons. Each visual
+projection cell's looming drive is scaled by how near the threat is to the centre of its own
+eye's field:
+
+    weight = floor + (1 - floor) * 0.5 * (1 + cos(threat_bearing - eye_bearing))
+
+with the eye bearing at -90 degrees on the left and +90 on the right, a floor of 0.25
+because a fly's eyes wrap far around its head, and the whole vector **normalised to mean 1**.
+
+Only the cell's *side* is used, which is measured. A finer within-eye map can be derived
+from the anatomy — weighted centroids of each cell's presynaptic columnar partners, which
+spread across the whole columnar cloud — but the descending projection is perfectly
+ipsilateral, so within-hemisphere position is discarded before it can reach anything. It
+would be machinery without consequence, and is deliberately not built.
+
+**Result against the pre-registered prediction.** Left-minus-right first spike, fly held
+still with a fixed body axis, two repeats:
+
+| | DNp01, threat right | DNp01, threat left |
+|---|---|---|
+| tuning off | -80, -60 | -200, -216 |
+| tuning on | **+88, +88** | -180, -208 |
+
+Negative means the left Giant Fiber leads. With tuning off the left leads wherever the
+threat is, exactly as a 71-versus-55 cell-count handicap predicts, and the sign never
+changes. With tuning on **the sign flips with the threat's side**: a right-side threat now
+makes the right Giant Fiber fire first, beating the handicap. The swing is around 140 ms
+against a 30-40 ms jitter floor, and repeats agree to within a few milliseconds. DNp04
+behaves the same way; DNp103 stays positive on both sides, so two of the three pairs
+examined carry bearing and one does not.
+
+**The normalisation is not cosmetic.** Weights are all <= 1, so without it the tuning
+attenuates rather than redistributes: measured, the escape threshold slipped from 16.7 to
+26.9 degrees and the fly stopped getting away. That reads as a change in sensitivity and is
+really an artifact of losing drive. Normalised, the threshold holds at 17.2 degrees against
+16.7 with tuning off, and the outcome is unchanged. Retinotopy is a claim about *where* the
+drive goes, and the implementation now says only that.
+
+**Still outstanding: the second pre-registered test.** The type-preserving shuffle must stop
+reproducing the escape, since it reassigns partners without respecting hemisphere and would
+scramble the ipsilateral organisation this depends on. Until that is run, this result shows
+direction reaching the descending neurons but does not yet show that the measured wiring is
+what carries it.
+
 ## 5. Neurons present, input absent
 
 A recurring shape: the cells are in the connectome and nothing drives them.
@@ -425,6 +482,12 @@ instance requiring that every commanded takeoff was actually performed.
 ## 8. Adding an entry
 
 When a decision is made that a reader could reasonably disagree with, record: what was
-observed, what was chosen, what it rules out, and the evidence. If the evidence is a
+observed, what was chosen, what it rules out, and the evidence.
+
+**Name the mechanism, not just the outcome.** "The fly escapes in the right direction" is
+an observation; "hemifield-based tuning with a curve-based falloff" is the thing someone
+else could implement, argue with, or rule out. A mechanism named precisely enough to be
+wrong is the whole point of writing it down, and the distinction usually only becomes clear
+while the work is being done — so record it then, not afterwards from memory. If the evidence is a
 measurement, give the numbers. If a choice was made for convenience rather than
 faithfulness, say so — that is the most useful kind of entry here.

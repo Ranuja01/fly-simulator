@@ -406,11 +406,21 @@ def build_neuprint(
         print(f"  positions for {located:,}/{n:,} neurons "
               f"(brain and nerve cord, so the panel spans the whole CNS)")
 
+    # Which side of the animal each cell is on, straight from the dataset.
+    side_lookup = {}
+    if "side" in neurons.columns:
+        side_lookup = {int(b): str(v) for b, v in neurons["side"].items()}
+    hemisphere = np.zeros(n, dtype=np.int8)
+    for i, body in enumerate(ids):
+        s_ = side_lookup.get(int(body), "")
+        hemisphere[i] = -1 if s_ == "L" else (+1 if s_ == "R" else 0)
+
     return Connectome(
         name=f"neuprint-{dataset}",
         labels=tuple(labels),
         weights=weights,
         populations=population_arrays,
+        hemisphere=hemisphere,
         positions=positions,
         param_overrides={},
         description=(

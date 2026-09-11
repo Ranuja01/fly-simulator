@@ -78,9 +78,13 @@ class LoomingEncoder(BaseSensoryEncoder):
         params: EncoderParams,
         populations: Mapping[str, np.ndarray],
         n_neurons: int,
+        hemisphere: np.ndarray | None = None,
     ) -> None:
         self._p = params
         self._n = int(n_neurons)
+        self._hemisphere = (
+            None if hemisphere is None else np.asarray(hemisphere).astype(np.int8)
+        )
 
         try:
             self._target = np.asarray(populations[params.target_population], dtype=np.int64)
@@ -105,6 +109,57 @@ class LoomingEncoder(BaseSensoryEncoder):
         self._prev_theta: float | None = None
         self._prev_t: float | None = None
         self._theta_dot: float = 0.0
+
+    def _hemifield_weights(self, obs: EnvObservation) -> np.ndarray:
+        """Per-target-cell gain from which eye can see the threat.
+
+        Each eye's field is centred out to its own side, so the preferred direction is
+        -90 degrees for the left eye and +90 for the right. Drive follows a raised cosine
+        in the angle between the threat and that preferred direction: full when the threat
+        is out to that side, half when it is directly ahead — which is the correct
+        balanced answer for a frontal approach — and falling to ``hemifield_floor``
+        behind. The floor is not zero because a fly's eyes wrap far around its head.
+
+        Returns all-ones when tuning is off, when the environment supplies no body axis,
+        or when the connectome does not say which side a cell is on. In each of those
+        cases the honest answer is the previous uniform behaviour rather than a guess.
+        """
+        p = self._p
+        if p.hemifield_tuning <= 0.0 or self._hemisphere is None:
+            return np.ones(self._target.size, dtype=np.float32)
+        if obs.agent_heading is None:
+            return np.ones(self._target.size, dtype=np.float32)
+
+        offset = np.asarray(obs.threat_position, dtype=np.float64) - np.asarray(
+            obs.agent_position, dtype=np.float64
+        )
+        if offset.size < 2 or not np.any(offset):
+            return np.ones(self._target.size, dtype=np.float32)
+
+        # Threat bearing in the fly's own frame: 0 straight ahead, +pi/2 to its right.
+        world = float(np.arctan2(offset[1], offset[0]))
+        bearing = world - float(obs.agent_heading)
+
+        side = self._hemisphere[self._target]
+        preferred = np.where(side < 0, -np.pi / 2.0, np.pi / 2.0)
+        # side == 0 (unknown or midline) gets no preference, so it stays uniform.
+        raised = 0.5 * (1.0 + np.cos(bearing - preferred))
+        weights = p.hemifield_floor + (1.0 - p.hemifield_floor) * raised
+        weights = np.where(side == 0, 1.0, weights)
+
+        # Normalised to mean 1. Retinotopy is a statement about WHERE the drive goes, not
+        # how much of it there is: the same object at the same distance produces the same
+        # total expansion on a near-panoramic eye wherever it sits. Without this the
+        # weights, all being <= 1, simply attenuate -- measured, the escape threshold
+        # slipped from 16.7 to 26.9 degrees and the fly stopped getting away, which is an
+        # attenuation artifact masquerading as a change in sensitivity.
+        mean = float(weights.mean())
+        if mean > 0:
+            weights = weights / mean
+
+        # Blend toward uniform so the effect can be dialled rather than only switched.
+        k = float(np.clip(p.hemifield_tuning, 0.0, 1.0))
+        return ((1.0 - k) + k * weights).astype(np.float32)
 
     def encode(self, obs: EnvObservation, n_neurons: int) -> SensoryPacket:
         if n_neurons != self._n:
@@ -183,12 +238,19 @@ class LoomingEncoder(BaseSensoryEncoder):
         # compression happens in each cell, so a strongly-driven LC4 can be at ceiling
         # while a weakly-driven one is still in its linear range — clipping the shared
         # drive first would erase that difference.
+        # Hemifield-based tuning with a curve-based falloff. Without it every cell gets
+        # the same current wherever the threat is, so azimuth never reaches the neurons.
+        tuning = self._hemifield_weights(obs)
+
         currents = np.zeros(self._n, dtype=np.float32)
         currents[self._target] = np.clip(
-            raw_drive_pa * self._gains, 0.0, p.max_current_pa
+            raw_drive_pa * self._gains * tuning, 0.0, p.max_current_pa
         )
 
         injected = currents[self._target]
+        left = self._hemisphere is not None and np.any(
+            self._hemisphere[self._target] < 0
+        )
         return SensoryPacket(
             t=obs.t,
             currents=currents,
@@ -202,6 +264,14 @@ class LoomingEncoder(BaseSensoryEncoder):
                 "distance_m": distance,
                 "theta_rad": theta,
                 "theta_dot_rad_s": raw_theta_dot,
+                "drive_pa_left": (
+                    float(injected[self._hemisphere[self._target] < 0].mean())
+                    if left else 0.0
+                ),
+                "drive_pa_right": (
+                    float(injected[self._hemisphere[self._target] > 0].mean())
+                    if left else 0.0
+                ),
                 "saturated": bool(np.any(injected >= p.max_current_pa)),
                 "discontinuity": discontinuity,
             },

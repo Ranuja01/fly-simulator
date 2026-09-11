@@ -266,6 +266,33 @@ class MotionParams:
 class EncoderParams:
     """Looming (visual expansion) encoder parameters."""
 
+    hemifield_tuning: float = 0.0
+    """How strongly looming drive is tuned to the eye that can see it, 0 to 1.
+
+    **Hemifield-based tuning with a curve-based falloff.** At 0 every visual projection
+    cell receives the identical current however the threat is placed, which is the state
+    this parameter exists to fix: azimuth never reaches the neurons, so a threat on the
+    left and one on the right are byte-identical inputs, and nothing downstream can encode
+    direction. At 1 each cell's drive is scaled by how near the threat is to the centre of
+    its own eye's field, following a raised cosine:
+
+        weight = floor + (1 - floor) * 0.5 * (1 + cos(threat_azimuth - eye_azimuth))
+
+    which is 1 when the threat is straight out to that eye's side, 0.5 when it is directly
+    ahead -- balanced across both eyes, correctly -- and falls to the floor behind.
+
+    Only the cell's SIDE is used, which is measured and unambiguous. A finer within-eye
+    map can be derived from the anatomy, but the descending projection is perfectly
+    ipsilateral, so within-hemisphere position is discarded before it can affect anything
+    downstream. Adding it would be machinery without consequence until that changes.
+
+    Default 0 so this is opt-in and the two conditions stay comparable."""
+
+    hemifield_floor: float = 0.25
+    """Drive retained by the eye facing away, as a fraction. Not zero: the fly's eyes wrap
+    far around its head with a binocular region in front, so an object behind one eye is
+    not invisible to it."""
+
     efference_copy: float = 1.0
     """How much of the fly's OWN motion is cancelled before encoding, 0 to 1.
 
