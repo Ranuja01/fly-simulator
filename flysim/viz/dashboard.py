@@ -203,7 +203,7 @@ class Dashboard:
         """
         self._animated: list = [
             self._halo, self._pred_trail, self._fly_trail,
-            self._pred_dot, self._fly_dot,
+            self._pred_dot, self._fly_dot, self._fly_axis,
             self._escape_vec, self._escape_head, self._status,
             *self._raster_lines.values(),
             *self._mean_lines.values(),
@@ -246,6 +246,11 @@ class Dashboard:
             [], [], marker="X", markersize=13, color=C_THREAT, linestyle="none",
             markeredgecolor=SURFACE, markeredgewidth=2.0, zorder=6,
         )
+        # Body axis. Without it the fly is a dot and there is no way to see which way it
+        # is facing -- which makes "the threat is in front" unreadable on screen, now that
+        # the encoder tunes every cell by bearing relative to this heading.
+        (self._fly_axis,) = ax.plot([], [], color=INK, lw=1.8, alpha=0.8, zorder=5,
+                                    solid_capstyle="round")
         (self._fly_dot,) = ax.plot(
             [], [], marker="o", markersize=10, color=INK, linestyle="none",
             markeredgecolor=SURFACE, markeredgewidth=2.0, zorder=7,
@@ -591,6 +596,16 @@ class Dashboard:
         self._pred_trail.set_data(pred_hist[:, 0], pred_hist[:, 1])
 
         self._fly_dot.set_data([obs.agent_position[0]], [obs.agent_position[1]])
+
+        # A short spine pointing the way the fly faces, length fixed in world units so it
+        # reads the same however the view is scaled.
+        heading = obs.agent_heading
+        if heading is None:
+            self._fly_axis.set_data([], [])
+        else:
+            base = np.asarray(obs.agent_position, dtype=float)
+            tip = base + np.array([np.cos(heading), np.sin(heading)]) * 0.035
+            self._fly_axis.set_data([base[0], tip[0]], [base[1], tip[1]])
         self._pred_dot.set_data([obs.threat_position[0]], [obs.threat_position[1]])
 
         drive = float(result.packet.raw.get("drive_pa", 0.0))
