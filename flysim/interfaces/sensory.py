@@ -79,11 +79,16 @@ class LoomingEncoder(BaseSensoryEncoder):
         populations: Mapping[str, np.ndarray],
         n_neurons: int,
         hemisphere: np.ndarray | None = None,
+        preferred_azimuth: np.ndarray | None = None,
     ) -> None:
         self._p = params
         self._n = int(n_neurons)
         self._hemisphere = (
             None if hemisphere is None else np.asarray(hemisphere).astype(np.int8)
+        )
+        self._preferred = (
+            None if preferred_azimuth is None
+            else np.asarray(preferred_azimuth, dtype=np.float64)
         )
 
         try:
@@ -106,6 +111,7 @@ class LoomingEncoder(BaseSensoryEncoder):
         self.reset()
 
     def reset(self) -> None:
+        self._reference = None
         self._prev_theta: float | None = None
         self._prev_t: float | None = None
         self._theta_dot: float = 0.0
@@ -141,25 +147,48 @@ class LoomingEncoder(BaseSensoryEncoder):
         bearing = world - float(obs.agent_heading)
 
         side = self._hemisphere[self._target]
+        # Straight out to the side, unless the anatomy says otherwise for this cell.
         preferred = np.where(side < 0, -np.pi / 2.0, np.pi / 2.0)
+        if self._preferred is not None:
+            derived = self._preferred[self._target] * p.retinotopy_polarity
+            known = np.isfinite(derived)
+            preferred = np.where(known, derived, preferred)
         # side == 0 (unknown or midline) gets no preference, so it stays uniform.
         raised = 0.5 * (1.0 + np.cos(bearing - preferred))
         weights = p.hemifield_floor + (1.0 - p.hemifield_floor) * raised
         weights = np.where(side == 0, 1.0, weights)
 
-        # Normalised to mean 1. Retinotopy is a statement about WHERE the drive goes, not
+        # Normalised against a FIXED reference rather than the per-frame mean. Dividing by
+        # the per-frame mean rescales every bearing to the same total drive, which says the
+        # threat is equally visible wherever it is -- and that erases front/back, since two
+        # eyes symmetric about the body axis differ only in magnitude there, not in ratio.
+        # The reference is the mean weight for a threat straight ahead.
+        # Retinotopy is a statement about WHERE the drive goes, not
         # how much of it there is: the same object at the same distance produces the same
         # total expansion on a near-panoramic eye wherever it sits. Without this the
         # weights, all being <= 1, simply attenuate -- measured, the escape threshold
         # slipped from 16.7 to 26.9 degrees and the fly stopped getting away, which is an
         # attenuation artifact masquerading as a change in sensitivity.
-        mean = float(weights.mean())
-        if mean > 0:
-            weights = weights / mean
+        reference = self._reference_mean(preferred, side)
+        if reference > 0:
+            weights = weights / reference
 
         # Blend toward uniform so the effect can be dialled rather than only switched.
         k = float(np.clip(p.hemifield_tuning, 0.0, 1.0))
         return ((1.0 - k) + k * weights).astype(np.float32)
+
+    def _reference_mean(self, preferred: np.ndarray, side: np.ndarray) -> float:
+        """Mean weight for a threat directly ahead — the fixed normalisation reference.
+
+        Cached: it depends only on the cells, not on where the threat is.
+        """
+        if getattr(self, "_reference", None) is None:
+            p = self._p
+            raised = 0.5 * (1.0 + np.cos(0.0 - preferred))
+            w = p.hemifield_floor + (1.0 - p.hemifield_floor) * raised
+            w = np.where(side == 0, 1.0, w)
+            self._reference = float(w.mean())
+        return self._reference
 
     def encode(self, obs: EnvObservation, n_neurons: int) -> SensoryPacket:
         if n_neurons != self._n:

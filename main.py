@@ -98,6 +98,7 @@ def build_runner(
     encoder: BaseSensoryEncoder = LoomingEncoder(
         config.encoder, brain.populations, brain.size,
         hemisphere=getattr(connectome, "hemisphere", None),
+        preferred_azimuth=getattr(connectome, "preferred_azimuth", None),
     )
     if retinotopy:
         h = getattr(connectome, "hemisphere", None)

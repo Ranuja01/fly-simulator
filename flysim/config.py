@@ -288,6 +288,14 @@ class EncoderParams:
 
     Default 0 so this is opt-in and the two conditions stay comparable."""
 
+    retinotopy_polarity: float = 1.0
+    """+1 or -1: which end of the anterior-posterior axis is forward-looking.
+
+    UNRESOLVED, and deliberately a parameter rather than a guess. Fly visual neuropils
+    invert the image between layers, so a cell's position along the body axis does not by
+    itself say whether it looks forward or backward. It does not affect whether front and
+    rear are distinguishable -- only which is which."""
+
     hemifield_floor: float = 0.25
     """Drive retained by the eye facing away, as a fraction. Not zero: the fly's eyes wrap
     far around its head with a binocular region in front, so an object behind one eye is

@@ -72,6 +72,22 @@ class Connectome:
     know which eye a visual cell belongs to without knowing anything else about it.
     """
 
+    preferred_azimuth: Any = None
+    """Optional ``(N,)`` float array: the direction in the visual field each cell prefers,
+    radians, 0 straight ahead and positive to the animal's right. NaN where unknown.
+
+    Derived from anatomy rather than assigned. A visual cell's place in the field is
+    estimated as the weighted centroid of its presynaptic columnar partners, whose own
+    positions carry the retinotopic map; that centroid is projected onto the body's
+    anterior-posterior axis, which is itself measured as brain-centroid to
+    nerve-cord-centroid and lies within the columnar sheet (|cos| 0.86-0.89 against the
+    sheet's second principal axis). Side supplies the left/right component.
+
+    What is NOT determined is the polarity: fly visual neuropils invert the image between
+    layers, so whether a posterior position means forward- or backward-looking cannot be
+    settled from coordinates alone. See ``EncoderParams.retinotopy_polarity``.
+    """
+
     positions: Any = None
     """Optional ``(N, D)`` anatomical coordinates in micrometres, or None.
 

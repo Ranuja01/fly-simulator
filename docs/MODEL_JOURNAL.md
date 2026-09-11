@@ -262,6 +262,61 @@ limitations are all this one fact:
 3. **Self-motion cannot be distinguished from object approach**, which is why efference copy
    had to substitute for the spatial discrimination a real fly uses.
 
+### Front and back: a per-cell azimuth map derived from anatomy
+
+Left/right tuning off the `side` field leaves a **front/back ambiguity by construction**.
+Two sensors symmetric about the body axis cannot separate a threat at 45 degrees front-left
+from one at 135 degrees back-left — they produce the same left/right ratio, exactly as two
+ears do. Moving the preferred direction off lateral changes the magnitude, not the ratio,
+and magnitude is already confounded with distance and closing speed.
+
+Breaking it needs structure *within* an eye, and three of the four ingredients turned out to
+be measurable:
+
+1. **Where a cell looks** — the weighted centroid of its presynaptic columnar partners.
+2. **The body's anterior-posterior axis** — brain centroid to nerve-cord centroid. It lies
+   *within* the columnar sheet: |cos| 0.86-0.89 against the sheet's second principal axis
+   and 0.05-0.14 against its thin axis, so front/back is a direction in the map rather than
+   across it. No orientation had to be invented.
+3. **Side** — from the dataset.
+4. **Polarity — NOT determined.** Fly visual neuropils invert the image between layers, so
+   whether a posterior position means forward- or backward-looking cannot be settled from
+   coordinates. Left as `retinotopy_polarity` rather than guessed. It decides which of
+   front and rear is which, not whether they are distinguishable.
+
+744 of 966 visual cells get a preferred azimuth, spanning -160 to +150 degrees: 108 frontal,
+70 rear, the rest lateral.
+
+**An earlier negative here was wrong, and the reason is worth keeping.** Measuring whether
+descending neurons sample different parts of the field, using the sheet's first two
+principal axes, gave centres clustered inside a quarter of the cell spread — recorded as
+"they all look at the same place". But the first principal axis is only obliquely related to
+the body axis (|cos| 0.45). Re-measured along the anatomically-derived axis, the
+differentiation is plain: front-half input share runs from **0.080 for DNp11 to 0.608 for
+DNp103**. The conclusion had been drawn on the wrong axis.
+
+**Preliminary result.** First spike per pair, threat at front versus rear, both on the
+midline so the left/right effect is excluded:
+
+| | DNp01 | DNp11 | DNp103 | DNp04 |
+|---|---|---|---|---|
+| front | 232 | 420 | 312 | **200** |
+| rear | 244 | 420 | 320 | **76** |
+
+DNp04 separates front from rear by 124 ms, well outside the 30-40 ms noise floor; the other
+three sit inside it. **One trial — this needs repeats before it is worth anything.**
+
+**Normalisation changed with it.** Dividing by the per-frame mean rescales every bearing to
+the same total drive, which asserts the threat is equally visible wherever it is and erases
+front/back before it starts. The reference is now fixed — the mean weight for a frontal
+threat — so total drive varies with bearing. A head-on approach is then unchanged by
+construction, and the scripted escape reads 16.7 degrees with tuning on or off.
+
+**Two caveats.** Drive saturates at 140 pA, so magnitude differences vanish at close range
+and any front/back signal lives in the approach ramp rather than the plateau. And the
+spread of preferred azimuths — mostly lateral, fewer frontal and rear — follows from mapping
+the anterior-posterior coordinate onto a circle, which is a choice, not a measurement.
+
 ### The experiment, run before implementing anything
 
 The obvious approach was to treat soma position as a receptive-field proxy: the LC4 soma

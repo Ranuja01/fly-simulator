@@ -165,6 +165,103 @@ def _cache_dir(dataset: str) -> Path:
     return cache_root() / "neuprint" / dataset.replace(":", "-")
 
 
+MIN_COLUMNAR_INPUTS = 10
+"""Columnar partners a cell needs before its field position is trusted."""
+
+def _preferred_azimuth(neurons, connections, ids, hemisphere):
+    """Where in the visual field each cell prefers, derived from anatomy.
+
+    Three measured ingredients and one unresolved sign:
+
+    1. **Where a cell looks** is estimated as the weighted centroid of its presynaptic
+       columnar partners (T4, T5, Tm), whose own soma positions carry the retinotopic map.
+       The cells' *own* somata do not: measured, LC4 cells sitting next to each other share
+       no more input than distant ones (1.03x against 3-4x for the columnar types), because
+       LC cell bodies sit in a rind rather than where their dendrites look.
+    2. **The body's anterior-posterior axis** is the vector from the brain's centroid to the
+       nerve cord's. It lies within the columnar sheet -- |cos| 0.86-0.89 against the
+       sheet's second principal axis, 0.05-0.14 against its thin axis -- so the front/back
+       direction really is a direction *in* the map rather than across it.
+    3. **Side** gives left versus right, from the dataset's own field.
+
+    A cell's preferred direction is then placed on a circle: fully anterior points straight
+    ahead, mid-range points straight out to its own side, fully posterior points behind.
+
+    The unresolved sign is the polarity. Fly visual neuropils invert the image between
+    layers, so whether a posterior position corresponds to forward- or backward-looking
+    vision cannot be settled from coordinates. It is left as a parameter rather than
+    guessed, and it does not affect whether front and rear are *distinguishable* -- only
+    which is which.
+    """
+    n = len(ids)
+    out = np.full(n, np.nan, dtype=np.float64)
+    needed = {"x", "y", "z", "superclass", "type"}
+    if not needed.issubset(set(neurons.columns)):
+        return out
+
+    coords = neurons[["x", "y", "z"]].to_numpy(dtype=float)
+    finite = ~np.isnan(coords).any(axis=1)
+    superclass = neurons["superclass"].astype(str)
+    types = neurons["type"].astype(str)
+
+    is_vnc = finite & superclass.str.startswith("vnc").to_numpy()
+    is_brain = finite & superclass.isin(
+        ["ol_intrinsic", "visual_projection", "cb_intrinsic"]
+    ).to_numpy()
+    if is_vnc.sum() < 5 or is_brain.sum() < 50:
+        return out
+    axis = coords[is_vnc].mean(axis=0) - coords[is_brain].mean(axis=0)
+    norm = float(np.linalg.norm(axis))
+    if norm <= 0:
+        return out
+    axis = axis / norm
+
+    position = {int(b): coords[i] for i, b in enumerate(neurons.index) if finite[i]}
+    columnar = {
+        int(b) for i, b in enumerate(neurons.index)
+        if finite[i] and (types.iat[i][:2] in ("T4", "T5") or types.iat[i].startswith("Tm"))
+    }
+
+    incoming: dict[int, list] = {}
+    pre_all = connections.pre.to_numpy()
+    post_all = connections.post.to_numpy()
+    w_all = connections.weight.to_numpy()
+    for pre, post, w in zip(pre_all, post_all, w_all):
+        pre = int(pre)
+        if pre in columnar:
+            incoming.setdefault(int(post), []).append((pre, float(w)))
+
+    # Front/back coordinate per cell: the input centroid projected onto the body axis.
+    depth: dict[int, float] = {}
+    for body, group in incoming.items():
+        if len(group) < MIN_COLUMNAR_INPUTS:
+            continue
+        pts = np.array([position[p] for p, _ in group])
+        wts = np.array([w for _, w in group])
+        depth[body] = float(((pts * wts[:, None]).sum(axis=0) / wts.sum()) @ axis)
+    if len(depth) < 20:
+        return out
+
+    values = np.array(list(depth.values()))
+    mid = float(np.median(values))
+    half = float(np.percentile(values, 95) - np.percentile(values, 5)) / 2.0
+    if half <= 0:
+        return out
+
+    for i, body in enumerate(ids):
+        d = depth.get(int(body))
+        if d is None:
+            continue
+        # -1 anterior .. +1 posterior, clipped so the tails do not dominate.
+        a = float(np.clip((d - mid) / half, -1.0, 1.0))
+        forward = -a
+        lateral = float(hemisphere[i]) * float(np.sqrt(max(0.0, 1.0 - a * a)))
+        if hemisphere[i] == 0:
+            continue
+        out[i] = float(np.arctan2(lateral, forward))
+    return out
+
+
 def assign_population(cell_type: str, superclass: str, nt: str) -> str:
     """Map a NeuPrint cell onto one of the engine's functional populations.
 
@@ -415,12 +512,15 @@ def build_neuprint(
         s_ = side_lookup.get(int(body), "")
         hemisphere[i] = -1 if s_ == "L" else (+1 if s_ == "R" else 0)
 
+    preferred = _preferred_azimuth(neurons, connections, ids, hemisphere)
+
     return Connectome(
         name=f"neuprint-{dataset}",
         labels=tuple(labels),
         weights=weights,
         populations=population_arrays,
         hemisphere=hemisphere,
+        preferred_azimuth=preferred,
         positions=positions,
         param_overrides={},
         description=(
