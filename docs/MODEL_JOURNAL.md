@@ -309,6 +309,32 @@ surround.
 
 ---
 
+### What the bottleneck allows, measured before building
+
+Retinotopy is only worth having if cells looking at different places project differently.
+Measured on the male CNS:
+
+| LC4 hemisphere | cells reaching a Giant Fiber | to left DNp01 | to right DNp01 |
+|---|---|---|---|
+| left | 71 | **100.0%** | 0.0% |
+| right | 55 | 0.0% | **100.0%** |
+
+Perfectly ipsilateral, no crossover. Within a hemisphere the spread of Giant Fiber
+preference is exactly **0.000** — every cell converges identically onto its one GF.
+
+So **bearing can survive as left-versus-right and no finer**. "What angle" is unrecoverable
+at DNp01 regardless of how good a map sits upstream, which is a hard ceiling and worth
+knowing before building a fine one. The upside is that the surviving channel is clean.
+
+This also explains the constant laterality of §4: with no retinotopy both hemispheres
+receive identical drive, so the side with more cells always wins the race to threshold. 71
+against 55 is why the left TTMn led at *every* bearing. It was a cell-count handicap, not a
+code.
+
+**Prediction, recorded before the work:** with a retinotopic encoder, a threat on the right
+should overcome the 71-versus-55 handicap and make the right Giant Fiber fire first. If it
+cannot, the map is not carrying enough signal to matter and should be rejected.
+
 ## 5. Neurons present, input absent
 
 A recurring shape: the cells are in the connectome and nothing drives them.
