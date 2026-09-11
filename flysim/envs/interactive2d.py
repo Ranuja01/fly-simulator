@@ -238,6 +238,9 @@ class InteractiveEnvironment(BaseEnvironment):
             distance=distance,
             closing_speed=closing,
             threat_size=self._threat_size,
+            agent_heading=(
+                self._flight.heading_angle if self._airborne else self._walk.heading
+            ),
             escaped=self._airborne,
             # Never ends. The point is to keep poking at it.
             done=False,

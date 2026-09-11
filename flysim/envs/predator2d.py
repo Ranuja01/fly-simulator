@@ -178,6 +178,9 @@ class Predator2DEnvironment(BaseEnvironment):
             distance=distance,
             closing_speed=self._closing_speed(),
             threat_size=p.threat_size_m,
+            agent_heading=(
+                self._flight.heading_angle if self._airborne else self._walk.heading
+            ),
             escaped=self._airborne,
             done=timed_out or self._captured or self._got_away,
             raw={

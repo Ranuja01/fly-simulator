@@ -27,10 +27,15 @@ from flysim.brain.builders import build, build_benchmark
 from flysim.brain.lif import LIFBrain
 from flysim import calibration
 from flysim.config import SimConfig
+from flysim.core.base import BaseSensoryEncoder
 from flysim.envs.interactive2d import InteractiveEnvironment
 from flysim.envs.predator2d import Predator2DEnvironment
 from flysim.interfaces.motor import GiantFiberDecoder
-from flysim.interfaces.sensory import LoomingEncoder
+from flysim.interfaces.sensory import (
+    CompositeEncoder,
+    LoomingEncoder,
+    MotionEncoder,
+)
 from flysim.runner import SimulationRunner
 
 INTERACTIVE_BRAIN_DT_MS = 0.4
@@ -50,6 +55,7 @@ def build_runner(
     lesion_lc4: float = 0.0,
     connectome_kwargs: dict | None = None,
     interactive: bool = False,
+    motion: bool = False,
 ) -> SimulationRunner:
     """Assemble the four layers into a runnable simulation.
 
@@ -86,7 +92,23 @@ def build_runner(
         InteractiveEnvironment(config.env) if interactive
         else Predator2DEnvironment(config.env)
     )
-    encoder = LoomingEncoder(config.encoder, brain.populations, brain.size)
+    encoder: BaseSensoryEncoder = LoomingEncoder(
+        config.encoder, brain.populations, brain.size
+    )
+
+    # A second modality. Looming reports approach and nothing else, so an object circling
+    # the fly is invisible to it; T4/T5 report the sweep across the eye. They are already
+    # one synapse upstream of LC4 and LPLC2 in this connectome, so their drive reaches the
+    # Giant Fiber through measured wiring rather than through anything added here.
+    if motion:
+        if "T4T5" not in brain.populations:
+            print("  note: this connectome has no T4/T5 cells; --motion has no effect")
+        else:
+            motion_encoder = MotionEncoder(
+                config.motion, brain.populations, connectome.labels, brain.size
+            )
+            print(motion_encoder.describe())
+            encoder = CompositeEncoder(encoder, motion_encoder)
 
     # Read the takeoff from the motor neurons when the dataset has them. On a brain-only
     # connectome they are outside the volume, so the Giant Fiber is the last observable
@@ -263,6 +285,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                              "Defaults to $FLYSIM_CACHE_DIR/flywire/<version>.")
     parser.add_argument("--flywire-version", type=str, default="v783",
                         help="FlyWire public release to load.")
+    parser.add_argument("--motion", action="store_true",
+                        help="Also drive the T4/T5 motion detectors, so the fly can see "
+                             "an object sweeping past it and not only one approaching.")
     parser.add_argument("--flywire-hops", type=int, default=1,
                         help="Synaptic steps to expand outward from the seed cell types.")
     parser.add_argument("--flywire-max-neurons", type=int, default=25_000,
@@ -374,6 +399,7 @@ def main(argv: list[str] | None = None) -> int:
         lesion_lc4=args.lesion_lc4,
         connectome_kwargs=connectome_kwargs,
         interactive=args.interactive,
+        motion=args.motion,
     )
     print(runner.brain.connectome.summary())
 

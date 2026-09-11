@@ -158,6 +158,16 @@ def assign_population(cell_type: str, superclass: str, nt: str) -> str:
         return "GF"
     if upper.startswith(("LC4", "LPLC2")) or sc == "visual_projection":
         return "LC4"
+    # T4 and T5 are the fly's elementary motion detectors -- T4 for moving light edges,
+    # T5 for dark ones -- and each comes in four subtypes with opposite preferred
+    # directions (a/b horizontal, c/d vertical). They arrive here for free as one-hop
+    # inputs to LC4 and LPLC2, so the motion pathway is already wired into the escape
+    # circuit; what was missing was anything to drive them. Split out of PMN so a motion
+    # encoder can target them. The split moves no edges and changes no signs -- it is a
+    # relabelling, and the regression gate confirms behaviour is unchanged without a
+    # motion encoder attached.
+    if upper.startswith(("T4", "T5")):
+        return "T4T5"
     if NT_SIGN_FULL.get((nt or "unclear").lower(), +1.0) < 0:
         return "INH"
     return "PMN"

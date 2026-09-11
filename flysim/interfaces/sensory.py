@@ -40,11 +40,11 @@ the identical :class:`SensoryPacket`, so the brain would not need to change.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 
-from flysim.config import EncoderParams
+from flysim.config import EncoderParams, MotionParams
 from flysim.core.base import BaseSensoryEncoder
 from flysim.core.types import EnvObservation, SensoryPacket
 
@@ -178,3 +178,170 @@ class LoomingEncoder(BaseSensoryEncoder):
                 "discontinuity": discontinuity,
             },
         )
+
+
+class MotionEncoder(BaseSensoryEncoder):
+    """Drives T4/T5 from the threat's sweep across the eye.
+
+    T4 and T5 are the fly's elementary motion detectors -- T4 for moving light edges, T5
+    for dark ones -- and each has four subtypes with different preferred directions: *a*
+    and *b* horizontal and opposed, *c* and *d* vertical and opposed. They are the input
+    to the lobula plate and, in this connectome, one synapse upstream of LC4 and LPLC2.
+
+    Why this exists: looming is blind to anything that does not approach. An object
+    orbiting the fly at constant radius produces **exactly zero** drive in the looming
+    encoder -- measured at 0.0-0.2 pA across every speed and radius tried -- because the
+    radial component of its velocity is nil. A real fly plainly sees such a thing. This
+    encoder supplies the modality that was missing.
+
+    What is honest about it, and what is not
+    ----------------------------------------
+    * The sweep rate is computed **analytically** from the relative velocity, for the same
+      reason the looming encoder does: the runner takes several simulation steps per
+      rendered frame, and a finite difference puts all the motion into one sample.
+    * **There is no retinotopy.** Real T4/T5 tile the visual field, each cell reporting
+      motion in its own small patch. Here every cell of a subtype receives the same drive,
+      so a single global sweep signal stands in for a spatial map. This is the largest
+      simplification in the class, and it is why drive has to be scaled by angular size by
+      hand -- a real array would get that for free from how many columns an object covers.
+    * **Subtypes are assigned by the sign of the sweep alone.** Whether motion is
+      progressive or regressive is eye-specific in the animal, and assigning eyes needs
+      the retinotopy above. Vertical subtypes (*c*, *d*) are left undriven, because a
+      top-down arena has no elevation for them to report -- they are present in the
+      network and stay silent, which is the truthful outcome rather than a fudge.
+    * **T4 and T5 are driven identically.** Separating them needs luminance polarity,
+      which needs a rendered image.
+    * **Self-motion is not included.** A turning fly sweeps its whole visual field, and
+      that signal dominates T4/T5 in a real animal. Adding it without the compensation
+      circuitry that cancels it would make the fly blind itself every time it turned.
+    """
+
+    def __init__(
+        self,
+        params: MotionParams,
+        populations: Mapping[str, np.ndarray],
+        labels: Sequence[str],
+        n_neurons: int,
+    ) -> None:
+        self._p = params
+        self._n = int(n_neurons)
+
+        try:
+            target = np.asarray(populations[params.target_population], dtype=np.int64)
+        except KeyError:
+            raise KeyError(
+                f"Motion encoder targets population {params.target_population!r}, which "
+                f"this connectome does not have. Available: {sorted(populations)}"
+            ) from None
+
+        # Sort the target cells by preferred direction. The subtype letter is the third
+        # character of the cell type, e.g. "T4c:12345" -> "c".
+        positive: list[int] = []
+        negative: list[int] = []
+        vertical: list[int] = []
+        for index in target:
+            cell_type = str(labels[int(index)]).split(":", 1)[0]
+            suffix = cell_type[2:3].lower()
+            if suffix == "a":
+                positive.append(int(index))
+            elif suffix == "b":
+                negative.append(int(index))
+            else:
+                vertical.append(int(index))
+        self._preferring_positive = np.asarray(positive, dtype=np.int64)
+        self._preferring_negative = np.asarray(negative, dtype=np.int64)
+        self._vertical = np.asarray(vertical, dtype=np.int64)
+        self.reset()
+
+    def reset(self) -> None:
+        self._sweep_rad_s: float = 0.0
+
+    def describe(self) -> str:
+        return (
+            f"  motion encoder: {self._preferring_positive.size} + "
+            f"{self._preferring_negative.size} horizontal T4/T5 driven, "
+            f"{self._vertical.size} vertical silent (a 2D arena has no elevation)"
+        )
+
+    def encode(self, obs: EnvObservation, n_neurons: int) -> SensoryPacket:
+        if n_neurons != self._n:
+            raise ValueError(
+                f"Motion encoder was built for {self._n} neurons but was asked to drive "
+                f"{n_neurons}. Rebuild the encoder when the connectome changes."
+            )
+        p = self._p
+        distance = max(float(obs.distance), p.min_distance_m)
+
+        # Signed angular velocity of the threat about the fly, in the plane. For a line of
+        # sight u and relative velocity v, the component of v ALONG u is the closing speed
+        # the looming encoder uses; the component ACROSS u is what sweeps the image over
+        # the eye, and dividing it by distance turns it into an angular rate.
+        offset = np.asarray(obs.threat_position, dtype=np.float64) - np.asarray(
+            obs.agent_position, dtype=np.float64
+        )
+        relative = np.asarray(obs.threat_velocity, dtype=np.float64) - np.asarray(
+            obs.agent_velocity, dtype=np.float64
+        )
+        if offset.size >= 2:
+            unit = offset[:2] / distance
+            cross = float(unit[0] * relative[1] - unit[1] * relative[0])
+            self._sweep_rad_s = cross / distance
+        else:
+            self._sweep_rad_s = 0.0
+
+        rate = float(np.clip(self._sweep_rad_s, -p.max_rate_rad_s, p.max_rate_rad_s))
+
+        # Occupancy stands in for the retinotopic tiling this encoder does not have: a
+        # larger object covers more columns and so recruits more of the array.
+        theta = 2.0 * float(np.arctan(obs.threat_size / (2.0 * distance)))
+        occupancy = min(theta / float(np.deg2rad(p.size_reference_deg)), 1.0)
+
+        drive = p.gain_pa * abs(rate) * occupancy
+        currents = np.zeros(self._n, dtype=np.float32)
+        # Opposed subtypes: each half of the population reports one direction only, which
+        # is what makes the pair a direction-selective signal rather than a speedometer.
+        active = self._preferring_positive if rate > 0 else self._preferring_negative
+        if active.size:
+            currents[active] = min(drive, p.max_current_pa)
+
+        return SensoryPacket(
+            t=obs.t,
+            currents=currents,
+            raw={
+                "sweep_rad_s": self._sweep_rad_s,
+                "motion_drive_pa": float(drive),
+                "motion_direction": ("a" if rate > 0 else "b" if rate < 0 else "none"),
+                "motion_occupancy": occupancy,
+            },
+        )
+
+
+class CompositeEncoder(BaseSensoryEncoder):
+    """Sums several encoders into one packet.
+
+    The :class:`SensoryPacket` is a flat per-neuron current vector, so combining
+    modalities really is addition -- a neuron receiving both looming and motion input gets
+    both currents, exactly as it would if two afferent pathways converged on it. No
+    encoder needs to know that another exists.
+
+    The runner holds exactly one encoder, which was fine while there was only one
+    modality. This is the smallest thing that lifts that restriction.
+    """
+
+    def __init__(self, *encoders: BaseSensoryEncoder) -> None:
+        if not encoders:
+            raise ValueError("CompositeEncoder needs at least one encoder.")
+        self._encoders = encoders
+
+    def reset(self) -> None:
+        for encoder in self._encoders:
+            encoder.reset()
+
+    def encode(self, obs: EnvObservation, n_neurons: int) -> SensoryPacket:
+        total = np.zeros(n_neurons, dtype=np.float32)
+        raw: dict = {}
+        for encoder in self._encoders:
+            packet = encoder.encode(obs, n_neurons)
+            total += packet.currents
+            raw.update(packet.raw)
+        return SensoryPacket(t=obs.t, currents=total, raw=raw)

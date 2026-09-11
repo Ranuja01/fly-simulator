@@ -63,6 +63,16 @@ class EnvObservation:
     threat_size: float
     """Physical extent of the looming object in metres (the ``l`` of ``l/d``)."""
 
+    agent_heading: float | None = None
+    """Body axis in radians, or ``None`` where the environment does not track one.
+
+    Looming is heading-independent -- an object on a collision course is threatening
+    from any bearing -- so nothing needed this until direction-selective cells arrived.
+    T4/T5 are defined by a *preferred direction*, which only means something relative to
+    the animal's own axis, so a motion encoder cannot work without it. Optional because
+    an environment is free not to have a body axis; an encoder that needs one says so.
+    """
+
     escaped: bool = False
     """True once the escape reflex has fired and the fly is ballistic."""
 

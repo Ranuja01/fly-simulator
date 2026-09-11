@@ -58,6 +58,9 @@ C_THREAT = "#d03b3b"  # status:critical - the predator, always paired with a lab
 
 # Per-population style: colour, dash pattern, line width, display name.
 SERIES_STYLE: dict[str, tuple[str, object, float, str]] = {
+    # Upstream of LC4: elementary motion detectors, present on a CNS dataset and silent
+    # unless a motion encoder is attached (--motion).
+    "T4T5": ("#8a8f98", (0, (2, 2)), 1.3, "T4/T5 (motion)"),
     "LC4": (C_LC4, "solid", 2.0, "LC4 (visual)"),
     "PMN": (C_PMN, (0, (6, 2)), 2.0, "PMN (premotor)"),
     "INH": (C_INH, (0, (1, 2)), 1.4, "INH (inhibition)"),

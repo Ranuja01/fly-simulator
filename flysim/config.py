@@ -193,6 +193,42 @@ class EnvParams:
 
 
 @dataclass(frozen=True)
+class MotionParams:
+    """T4/T5 elementary-motion-detector encoder parameters.
+
+    Separate from :class:`EncoderParams` because it is a different modality with its own
+    calibration, not a variant of looming. Looming asks "is it getting closer"; this asks
+    "is it sweeping across the eye", and an object can do either without the other.
+    """
+
+    target_population: str = "T4T5"
+
+    gain_pa: float = 12.0
+    """Picoamps per radian/second of azimuthal sweep.
+
+    Deliberately below the looming gain. T4/T5 feed LC4 and LPLC2 through measured
+    wiring, so motion drive reaches the Giant Fiber whether or not that is desirable --
+    and a real fly does not escape from things merely moving past it. This is the
+    number to turn down if translational motion starts triggering takeoffs."""
+
+    size_reference_deg: float = 20.0
+    """Angular size at which an object is treated as filling its share of the field.
+
+    Drive scales with ``min(theta / this, 1)``. Without it a distant speck sweeping fast
+    would drive the motion detectors as hard as a looming wall, because the encoder has
+    no retinotopy and therefore no notion of how many columns an object covers."""
+
+    max_rate_rad_s: float = 40.0
+    """Sweep rate above which the drive saturates, rad/s."""
+
+    max_current_pa: float = 140.0
+    """Per-neuron ceiling, matching the looming encoder's."""
+
+    min_distance_m: float = 0.002
+    """Division-by-zero guard, as in the looming encoder."""
+
+
+@dataclass(frozen=True)
 class EncoderParams:
     """Looming (visual expansion) encoder parameters."""
 
@@ -374,6 +410,7 @@ class SimConfig:
     neuron: NeuronParams = field(default_factory=NeuronParams)
     env: EnvParams = field(default_factory=EnvParams)
     encoder: EncoderParams = field(default_factory=EncoderParams)
+    motion: MotionParams = field(default_factory=MotionParams)
     decoder: DecoderParams = field(default_factory=DecoderParams)
     runner: RunnerParams = field(default_factory=RunnerParams)
     viz: VizParams = field(default_factory=VizParams)
