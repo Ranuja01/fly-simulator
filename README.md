@@ -183,6 +183,7 @@ dashboard with **zero source changes**.
 |---|---|
 | [docs/COMPUTE_BUDGET.md](docs/COMPUTE_BUDGET.md) | Storage/RAM/GPU budgets, the 78 GB dense-matrix trap, directory layout, where the cache must live |
 | [docs/CONNECTOME_ACCESS.md](docs/CONNECTOME_ACCESS.md) | NeuPrint and FlyWire tokens step by step, live queries, extracting LC4→DNp01, converting to `Connectome` |
+| [docs/MODEL_JOURNAL.md](docs/MODEL_JOURNAL.md) | Why the model is the way it is: what is measured versus invented, the decisions and the evidence behind them, and what is currently blocked |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | MuJoCo / Minecraft / socket integration, the timing problem, what still needs work, and the project conventions (import boundaries, units, verification) |
 
 ## Going to real data
