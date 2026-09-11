@@ -28,9 +28,12 @@ is supposed to do. So:
 * **Do not fake it.** Adding plausible-looking noise to make output seem lifelike would
   improve the demo and destroy the point.
 
-The sharpest test of whether the anatomy matters is the shuffle control: randomise the
-wiring while holding every statistic constant, and the escape vanishes entirely — 229 real
-LC4→DNp01 connections against 0.
+How far that rule actually holds is measured in §3.7, not asserted. An earlier version of
+this document claimed the shuffle control showed "the escape vanishes entirely" against
+"229 real LC4→DNp01 connections against 0". **That claim was never implemented, could not
+be reproduced by a reader, and is wrong.** When the experiment was finally written
+(`tools/shuffle_control.py`) it produced a more interesting and much less flattering
+result.
 
 ---
 
@@ -164,6 +167,52 @@ and the takeoff must be inferred. On a CNS dataset it is *read*.
 `powered=False`, zero DLMn spikes, 21.5 cm travelled against 50.0 cm intact, and repeated
 short hops instead of one flight. What is measured is *which* behaviour happens; the shape of
 each remains scripted.
+
+### 3.7 How much of the behaviour is the anatomy?
+
+The strongest claim this project could make is that the escape comes from the measured
+wiring rather than from the constants fitted on top of it. `tools/shuffle_control.py` tests
+it, and the design matters more than the result.
+
+**The rigged version is the obvious one.** Shuffle the wiring, re-run with constants fitted
+for the *real* wiring, watch the escape disappear. That proves almost nothing: the constants
+were chosen to make the real network work, and denying a different network its own constants
+is not a comparison. **Every wiring therefore gets the same tuning budget** — the same sweep
+of `pa_per_synapse` — and the question is what the *best achievable* behaviour is for each.
+Passing requires discriminating: fire at a real approach *and* withhold from a slow drift,
+at the same value. Firing at everything is not a threshold.
+
+Measured on the male CNS, 388,722 edges:
+
+| wiring | direct LC4→GF | best achievable |
+|---|---|---|
+| measured | 304 | works — escapes at 8.6 / 10.4 / 16.7° |
+| degree-preserving shuffle | 70 | **never works, at any value** |
+| type-preserving shuffle | 245 | works — 9.0 / 11.3 / 18.6° |
+
+**The anatomy is load-bearing at the level of cell types, and not at the level of individual
+cells.** Destroy the type structure and no amount of tuning recovers a reflex. Preserve the
+connection counts and weights between every pair of cell types while scrambling which
+individual cells are joined, and the behaviour is reproduced indistinguishably.
+
+That second row is the honest limit of what this model currently demonstrates, and it is
+**not** a fact about the fly — it is a fact about the model. The looming encoder drives all
+966 LC4 cells identically, so individual identity carries no information by construction and
+nothing downstream could be sensitive to it. This is the retinotopy gap of §4, measured from
+a third direction: no spatial input, therefore no way for individual wiring to matter.
+
+**It also gives the retinotopy work its acceptance criterion, pre-registered here before
+that work begins.** If a retinotopic encoder is doing real work, the type-preserving shuffle
+must *stop* reproducing the behaviour — because then which particular LC4 cell connects
+where decides whether a threat on one side reaches the right cells. A retinotopy that leaves
+this table unchanged has added machinery and no information, and should be rejected however
+plausible its output looks.
+
+Caveats: one shuffle seed, four values in the sweep. The degree shuffle loses 0.9% of edges
+and the type shuffle 4.8% to collisions merging into existing connections. The type-
+preserving null is deliberately generous — it is *constructed* to preserve the LC4→GF
+connection count — which is what makes it the right test of individual-cell specificity and
+the wrong test of anything else.
 
 ### 3.6 The motion channel
 
