@@ -54,6 +54,62 @@ Everything downstream of the muscles is scripted.**
 | jump speed, flight duration, hop decay | scripted constants |
 | all walking | scripted; no locomotor circuit is modelled |
 
+### The map: populations, motions, files
+
+Kept here because it is the thing that goes stale fastest. Counts are for the male CNS at
+`hops=1, max_neurons=25000`.
+
+**Populations — what each one is and whether anything reads it.**
+
+| population | cells | what it is | carries | status |
+|---|---|---|---|---|
+| `T4T5` | 6,790 | elementary motion detectors | sweep across the eye | silent unless `--motion` |
+| `LC4` | 966 | visual projection (LC4, LPLC2, other `visual_projection`) | looming, and bearing under `--retinotopy` | driven by `LoomingEncoder` |
+| `INH` | 3,688 | cells with an inhibitory transmitter | suppression, incl. lobula-plate opponency | emergent |
+| `PMN` | 11,437 | everything not otherwise classified | **nothing — zero spikes** | inert |
+| `DN` | 67 | descending neurons other than DNp01 | left/right at several pairs; front/back at DNp04 | measured, **not read** |
+| `GF` | 2 | DNp01, the Giant Fiber | the escape command | read on brain-only datasets |
+| `MOTOR` | 10 | TTMn and other non-flight motor cells | jump trigger, carries left/right | read by the decoder on CNS datasets |
+| `FLIGHT` | 13 | DLMn, DVMn | wing power | read for powered-versus-hop |
+
+**Motions — what produces each, and whether it is measured or invented.**
+
+| motion | produced by | source |
+|---|---|---|
+| when the escape fires | LC4 → DN → GF → TTMn | **measured** |
+| flight versus a bare hop | DLMn | **measured** |
+| which side leads | hemifield tuning → DN → TTMn | **measured** |
+| escape heading | geometry, away-vector + 42° bias | scripted |
+| jump speed, flight duration, hop decay | constants in `EnvParams` | scripted |
+| mid-flight steering | geometric `redirect` | scripted |
+| all walking | `WalkingFly` | scripted |
+| aiming the jump | `Sternotrochanter MN` | present, **never fires** |
+
+**Files — which side of the boundary each sits on.**
+
+| file | role |
+|---|---|
+| `flysim/core/types.py` | the four boundary dataclasses; the entire inter-layer contract |
+| `flysim/envs/predator2d.py`, `interactive2d.py` | world → `EnvObservation` — **input source** |
+| `flysim/interfaces/sensory.py` | `EnvObservation` → `SensoryPacket` — **input encoder** |
+| `flysim/brain/neuprint_source.py`, `loaders.py`, `builders.py` | connectome files/API → `Connectome` |
+| `flysim/brain/lif.py` | `SensoryPacket` → `BrainState` — the engine, imports nothing else |
+| `flysim/interfaces/motor.py` | `BrainState` → `MotorCommand` — **output decoder** |
+| `flysim/envs/locomotion.py` | `MotorCommand` → kinematics — **output actuation** |
+| `flysim/runner.py` | the only module that sees more than one layer |
+| `flysim/calibration.py` | per-dataset constants that the data cannot supply |
+| `flysim/viz/dashboard.py` | display only; reads everything, drives nothing |
+
+**Tools — each answers one question.**
+
+| tool | question |
+|---|---|
+| `shuffle_control.py` | is the escape due to the wiring, given every wiring the same tuning budget? |
+| `direction_control.py` | does the left/right flip survive shuffling the wiring? |
+| `frontback_control.py` | does any descending pair separate front from rear? |
+| `field_map.py` | is the azimuth map spatially coherent, or noise? |
+| `calibrate_pa.py` | what picoamps-per-synapse discriminates a real approach from a drift? |
+
 The escape pathway runs end to end on measured wiring:
 
 ```
