@@ -213,16 +213,50 @@ limitations are all this one fact:
 3. **Self-motion cannot be distinguished from object approach**, which is why efference copy
    had to substitute for the spatial discrimination a real fly uses.
 
-**What implementing it would involve.** Give each cell a receptive-field direction and drive
-it by what happens in its own patch. The LC4 soma cloud within one hemisphere is a flat 2-D
-sheet — 75.6% / 22.7% / 1.6% of variance along its principal axes — which is the shape a
-retinotopic map should have, so the anatomy plausibly carries it.
+### The experiment, run before implementing anything
 
-**The caveat that must be tested first.** Those are *soma* positions. In flies the LC cell
-bodies sit in a rind at the surface while their dendrites do the tiling in the lobula. Soma
-position is a proxy and possibly a poor one; the real map lives in synapse coordinates, which
-is a much larger fetch. Check whether soma position predicts anything sensible before
-building on it.
+The obvious approach was to treat soma position as a receptive-field proxy: the LC4 soma
+cloud within a hemisphere is a flat 2-D sheet (75.6% / 22.7% / 1.6% of variance along its
+principal axes), which is the shape a retinotopic map should have.
+
+**That approach was tested and rejected.** If a cell type is retinotopic, two cells sitting
+near each other look at neighbouring patches and should receive more similar input. Measuring
+input-vector similarity against soma distance, with columnar cell types as a positive control:
+
+| type | near/far input similarity | baseline similarity |
+|---|---|---|
+| Tm (columnar) | **3.2× / 4.3×** | 0.005–0.018 |
+| T4/T5 (columnar) | **1.9× / 1.8×** | 0.012–0.031 |
+| LC4 | 1.03× / 1.08× | 0.17–0.19 |
+| LPLC2 | 1.07× / 1.07× | 0.26–0.29 |
+
+The method detects columnar retinotopy strongly, and finds **nothing** for LC4 — at sample
+sizes where Tm shows a 3–4× effect, so this is a real negative and not lack of power. The
+baseline figures say why: LC4 pairs share input at 0.18 cosine *regardless of distance*,
+against 0.005–0.03 for Tm. LC4 pools broadly, which matches its large overlapping receptive
+fields, and its soma sits in the cell-body rind rather than where its dendrite looks.
+
+**The route that does work, and needs no new data.** Locate each LC4 cell's receptive field
+as the weighted centroid of its presynaptic columnar partners, whose own soma positions *do*
+carry the map. Using connectivity to find the dendrite instead of assuming the cell body
+marks it:
+
+| | median columnar inputs | centroid spread, as a fraction of the source cloud |
+|---|---|---|
+| LC4 L / R | 74 / 99 | 0.93 · 1.08 · 0.61  /  0.93 · 1.12 · 0.63 |
+| LPLC2 L / R | 73 / 108 | 0.70 · 0.82 · 0.32  /  0.71 · 0.82 · 0.32 |
+
+The inferred centres spread across essentially the whole columnar cloud, so different LC4
+cells genuinely look at different parts of the visual field and the population tiles it. The
+third axis is consistently the weakest, as expected from a curved 2-D sheet — and two
+dimensions is what a visual map needs.
+
+**What remains invented if this is built.** The centroids are positions in CNS coordinates,
+not visual angles. Turning them into azimuth and elevation requires choosing in-sheet axes
+and their orientation and sign — a fitted mapping, not a measurement, and it must be labelled
+as such. The arena also has no elevation and no background, so only azimuth would carry
+information, and the self-motion discrimination would still not work without a textured
+surround.
 
 ---
 
