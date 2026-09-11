@@ -186,6 +186,14 @@ class SimulationRunner:
         self.escape_t_s: float | None = None
         self.escape_distance_m: float | None = None
         self.escape_threat_size_m: float | None = None
+        self.takeoff_geometry: list[tuple[float, float]] = []
+        """(distance_m, threat_size_m) at every takeoff, not only the first.
+
+        A scripted episode contains one approach, so the first takeoff is the whole
+        story. An interactive session contains dozens, and its first one is wherever the
+        cursor happened to be when the window opened -- which made the reported escape
+        angle an arbitrary number rather than a measurement.
+        """
 
         packet = self.encoder.encode(self.observation, self.brain.size)
         state = BrainState(
@@ -237,7 +245,9 @@ class SimulationRunner:
         if redirected_this_frame and not command.redirect:
             command = replace(command, redirect=True)
 
-        # Record the *first* takeoff only; later ones are re-arms of the same reflex.
+        if triggered_this_frame:
+            self.takeoff_geometry.append((obs.distance, obs.threat_size))
+        # The *first* takeoff is kept separately; later ones are re-arms of the reflex.
         if triggered_this_frame and self.escape_frame is None:
             self.escape_frame = self.frame_index
             self.escape_t_s = obs.t
@@ -292,6 +302,15 @@ class SimulationRunner:
             half = size / (2.0 * self.escape_distance_m)
             theta_deg = float(np.rad2deg(2.0 * np.arctan(half)))
 
+        # Across every takeoff, not just the first. The median is the honest summary of
+        # an interactive session: individual takeoffs range from a considered approach to
+        # a cursor that happened to appear next to the fly.
+        angles = [
+            float(np.rad2deg(2.0 * np.arctan(size / (2.0 * d))))
+            for d, size in self.takeoff_geometry
+            if d > 0
+        ]
+
         return {
             "frames": self.frame_index,
             "sim_time_s": self.observation.t,
@@ -302,6 +321,10 @@ class SimulationRunner:
             "escape_t_s": self.escape_t_s,
             "escape_distance_m": self.escape_distance_m,
             "escape_angular_size_deg": theta_deg,
+            "escape_angular_size_deg_median": (
+                float(np.median(angles)) if angles else None
+            ),
+            "escape_angular_size_deg_all": [round(a, 1) for a in angles],
             "final_distance_m": self.observation.distance,
             "first_spike_ms": first_spikes,
             "active_substeps": counts,
