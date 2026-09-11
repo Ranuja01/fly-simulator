@@ -66,7 +66,7 @@ Kept here because it is the thing that goes stale fastest. Counts are for the ma
 | `T4T5` | 6,790 | elementary motion detectors | sweep across the eye | silent unless `--motion` |
 | `LC4` | 966 | visual projection (LC4, LPLC2, other `visual_projection`) | looming, and bearing under `--retinotopy` | driven by `LoomingEncoder` |
 | `INH` | 3,688 | cells with an inhibitory transmitter | suppression, incl. lobula-plate opponency | emergent |
-| `PMN` | 11,437 | everything not otherwise classified | **nothing — zero spikes** | inert |
+| `PMN` | 11,437 | everything not otherwise classified, incl. VNC premotor | fires under strong drive, silent in scripted episodes | partial |
 | `DN` | 67 | descending neurons other than DNp01 | left/right at several pairs; front/back at DNp04 | measured, **not read** |
 | `GF` | 2 | DNp01, the Giant Fiber | the escape command | read on brain-only datasets |
 | `MOTOR` | 10 | TTMn and other non-flight motor cells | jump trigger, carries left/right | read by the decoder on CNS datasets |
@@ -611,9 +611,14 @@ The premotor route dominates the direct one by an order of magnitude, as it shou
 descending neurons mostly drive premotor interneurons rather than motor neurons — and all
 4,374 of those interneurons are in the network.
 
-**It still does not fire.** `POSTURE` records zero spikes during an escape, and so does
-`PMN`, which is where the premotor interneurons sit. The escape itself still works (18.1
-degrees on this network against 16.7 on the smaller one).
+**The leg muscles still do not fire.** `POSTURE` records zero spikes. The escape itself
+still works (18.1 degrees on this network against 16.7 on the smaller one).
+
+The premotor stage, however, **does** fire, and an earlier version of this entry was wrong
+to say otherwise. It was written from scripted episodes, where the drive is gentle. Under
+interactive stimulation the chain reads `DN 890 -> PMN 348 -> POSTURE 0` substeps. So the
+signal reaches the premotor interneurons and dies at the last synapse before muscle, which
+is a far tighter localisation than "it dies somewhere in the middle".
 
 **This is the most important limitation in the model, and the fetch is what exposed it.**
 Drive attenuates stage by stage. `pa_per_synapse = 0.002` was fitted so the escape triggers
