@@ -186,6 +186,15 @@ class SimulationRunner:
         self.escape_t_s: float | None = None
         self.escape_distance_m: float | None = None
         self.escape_threat_size_m: float | None = None
+        self._peak_since_takeoff: dict[str, float] = {}
+        """Running peaks since the last takeoff, reset at each one.
+
+        A takeoff record taken at the triggering frame describes the moment AFTER the
+        decision -- the Giant Fiber fired some milliseconds earlier, on drive that built
+        over a few hundred before that. Peaks over the run-up are what actually say why it
+        fired, and the instantaneous values can be much lower if the threat stopped.
+        """
+
         self.takeoff_events: list[dict] = []
         """One record per takeoff: when, how close, how fast, and on what drive."""
 
@@ -215,6 +224,18 @@ class SimulationRunner:
 
         # One encode per frame: a zero-order hold on sensory input across substeps.
         packet = self.encoder.encode(obs, self.brain.size)
+
+        threat_speed = float(np.linalg.norm(np.asarray(obs.threat_velocity)))
+        fly_speed = float(np.linalg.norm(np.asarray(obs.agent_velocity)))
+        for key, value in (
+            ("loom_drive_pa", float(packet.raw.get("drive_pa_max", 0.0))),
+            ("motion_drive_pa", float(packet.raw.get("motion_drive_pa", 0.0))),
+            ("closing_ms", float(obs.closing_speed)),
+            ("fly_speed_ms", fly_speed),
+            ("threat_speed_ms", threat_speed),
+        ):
+            if value > self._peak_since_takeoff.get(key, 0.0):
+                self._peak_since_takeoff[key] = value
 
         decimation = max(self.config.runner.telemetry_decimation, 1)
         state: BrainState | None = None
@@ -259,13 +280,17 @@ class SimulationRunner:
                 "t_s": round(float(obs.t), 3),
                 "distance_mm": round(float(obs.distance) * 1000.0, 1),
                 "closing_ms": round(float(obs.closing_speed), 3),
-                "fly_speed_ms": round(
-                    float(np.linalg.norm(np.asarray(obs.agent_velocity))), 3
-                ),
+                "fly_speed_ms": round(fly_speed, 3),
+                "threat_speed_ms": round(threat_speed, 3),
                 "loom_drive_pa": round(float(packet.raw.get("drive_pa_max", 0.0)), 1),
                 "motion_drive_pa": round(float(packet.raw.get("motion_drive_pa", 0.0)), 1),
                 "powered": bool(command.powered),
+                # The run-up, which is what actually caused it.
+                "peak_before": {
+                    k: round(v, 3) for k, v in sorted(self._peak_since_takeoff.items())
+                },
             })
+            self._peak_since_takeoff = {}
         # The *first* takeoff is kept separately; later ones are re-arms of the reflex.
         if triggered_this_frame and self.escape_frame is None:
             self.escape_frame = self.frame_index
