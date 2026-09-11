@@ -622,12 +622,30 @@ class Dashboard:
 
         if self._interactive:
             takeoffs = int(obs.raw.get("takeoffs", 0))
+            # The motion channel exists only when an encoder supplies it, so the
+            # row appears only then rather than sitting at a permanent zero and
+            # looking broken.
+            raw = self._last_result.packet.raw
+            motion_line = ""
+            if "motion_drive_pa" in raw:
+                motion_line = (
+                    f"motion     {raw['motion_drive_pa']:6.1f} pA  "
+                    f"({raw.get('motion_direction', '-')})\n"
+                )
+            # The fly's OWN speed enters closing speed, which is computed from the
+            # relative velocity. Worth showing: it separates 'that thing is coming
+            # at me' from 'I am walking into that thing'.
+            fly_speed = float(
+                np.linalg.norm(np.asarray(obs.agent_velocity, dtype=float))
+            )
             self._status.set_text(
                 f"t          {obs.t:5.3f} s\n"
                 f"distance   {obs.distance * 1000:6.1f} mm\n"
                 f"object     {obs.threat_size * 1000:6.1f} mm  (scroll to resize)\n"
                 f"closing    {obs.closing_speed:6.2f} m/s\n"
+                f"fly speed  {fly_speed:6.2f} m/s\n"
                 f"loom drive {drive:6.1f} pA\n"
+                f"{motion_line}"
                 f"{gf_line}\n"
                 f"escapes    {takeoffs}\n"
                 f"\nmove mouse = threat   ·   r = reset fly"

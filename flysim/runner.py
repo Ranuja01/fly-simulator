@@ -186,6 +186,9 @@ class SimulationRunner:
         self.escape_t_s: float | None = None
         self.escape_distance_m: float | None = None
         self.escape_threat_size_m: float | None = None
+        self.takeoff_events: list[dict] = []
+        """One record per takeoff: when, how close, how fast, and on what drive."""
+
         self.takeoff_geometry: list[tuple[float, float]] = []
         """(distance_m, threat_size_m) at every takeoff, not only the first.
 
@@ -247,6 +250,22 @@ class SimulationRunner:
 
         if triggered_this_frame:
             self.takeoff_geometry.append((obs.distance, obs.threat_size))
+            # Enough context to reconstruct WHY each takeoff happened, because the
+            # interesting question about an interactive session is usually that and not
+            # the fact that it happened. Fly speed is here because the fly's own velocity
+            # enters closing speed -- the difference between being approached and walking
+            # into something.
+            self.takeoff_events.append({
+                "t_s": round(float(obs.t), 3),
+                "distance_mm": round(float(obs.distance) * 1000.0, 1),
+                "closing_ms": round(float(obs.closing_speed), 3),
+                "fly_speed_ms": round(
+                    float(np.linalg.norm(np.asarray(obs.agent_velocity))), 3
+                ),
+                "loom_drive_pa": round(float(packet.raw.get("drive_pa_max", 0.0)), 1),
+                "motion_drive_pa": round(float(packet.raw.get("motion_drive_pa", 0.0)), 1),
+                "powered": bool(command.powered),
+            })
         # The *first* takeoff is kept separately; later ones are re-arms of the reflex.
         if triggered_this_frame and self.escape_frame is None:
             self.escape_frame = self.frame_index
@@ -325,6 +344,7 @@ class SimulationRunner:
                 float(np.median(angles)) if angles else None
             ),
             "escape_angular_size_deg_all": [round(a, 1) for a in angles],
+            "takeoff_events": self.takeoff_events,
             "final_distance_m": self.observation.distance,
             "first_spike_ms": first_spikes,
             "active_substeps": counts,
