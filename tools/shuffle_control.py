@@ -94,6 +94,11 @@ def _rebuild(connectome: Connectome, pre, post, data, name: str) -> Connectome:
         labels=connectome.labels,
         weights=weights,
         populations=connectome.populations,
+        # Carried through deliberately. A null model must differ from the real network in
+        # the ONE respect being tested -- here, which cells are wired to which. Dropping
+        # the recorded sides would additionally disable hemifield tuning on the shuffles,
+        # so they would fail for a reason that has nothing to do with their wiring.
+        hemisphere=connectome.hemisphere,
         param_overrides=connectome.param_overrides,
         description=f"NULL MODEL derived from {connectome.name}: {name}",
     )
@@ -189,6 +194,7 @@ def evaluate(connectome: Connectome, profile, values) -> list[dict]:
             labels=connectome.labels,
             weights=connectome.weights * (pa / BASE_PA),
             populations=connectome.populations,
+            hemisphere=connectome.hemisphere,
             param_overrides=connectome.param_overrides,
             description=connectome.description,
         )

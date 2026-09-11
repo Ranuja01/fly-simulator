@@ -411,11 +411,33 @@ really an artifact of losing drive. Normalised, the threshold holds at 17.2 degr
 16.7 with tuning off, and the outcome is unchanged. Retinotopy is a claim about *where* the
 drive goes, and the implementation now says only that.
 
-**Still outstanding: the second pre-registered test.** The type-preserving shuffle must stop
-reproducing the escape, since it reassigns partners without respecting hemisphere and would
-scramble the ipsilateral organisation this depends on. Until that is run, this result shows
-direction reaching the descending neurons but does not yet show that the measured wiring is
-what carries it.
+**The second pre-registered test, run** (`tools/direction_control.py`). Note the prediction
+as first written said the shuffle must stop reproducing "the behaviour", which was
+imprecise: the escape only needs enough total drive to reach the Giant Fiber, and
+scrambling partners need not prevent that. The sharp claim is about the flip.
+
+| wiring | threat right | threat left | flips? |
+|---|---|---|---|
+| measured | +88.0, +88.0 | -180.0, -208.0 | **yes** |
+| type-preserving shuffle | +4.0, -8.0 | +16.0, -12.0 | no |
+| degree-preserving shuffle | silent | silent | no |
+
+Scrambling which individual cells are joined, while preserving every type-level statistic,
+**destroys the flip entirely** — it collapses to ±16 ms around zero, inside the jitter
+floor. So hemifield tuning does not produce direction on its own; the measured wiring
+carries it.
+
+**This inverts §3.7, in the way that section predicted.** Without spatial input the
+type-preserving shuffle reproduced the escape indistinguishably, and the conclusion was that
+the anatomy is load-bearing at the level of cell types but not individual cells. The stated
+reason was that the encoder drove every cell identically, so individual identity could not
+matter. Give the encoder spatial structure and individual identity becomes load-bearing,
+which is the first result in this project where it does.
+
+A caveat on the null: one shuffle seed, two repeats, one descending pair. The effect is far
+outside the noise floor, but the degree-preserving row proves less than it appears — DNp01
+is silent there, so it fails to flip for want of any spikes at all rather than for want of
+organisation.
 
 ## 5. Neurons present, input absent
 
