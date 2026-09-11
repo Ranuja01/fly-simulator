@@ -304,7 +304,20 @@ midline so the left/right effect is excluded:
 | rear | 244 | 420 | 320 | **76** |
 
 DNp04 separates front from rear by 124 ms, well outside the 30-40 ms noise floor; the other
-three sit inside it. **One trial — this needs repeats before it is worth anything.**
+three sit inside it.
+
+**Repeated across five seeds** (`tools/frontback_control.py`), it holds:
+
+| pair | front | rear | difference |
+|---|---|---|---|
+| DNp04 | 204 ±4 | 76 ±0 | **+128 ms** |
+| DNp01 | 231 ±5 | 214 ±59 | +17 |
+| DNp103 | 312 ±8 | 324 ±5 | -12 |
+| DNp11 | 423 ±10 | 433 ±10 | -10 |
+
+One pair of four carries front/back, reproducibly. The ±0 is frame quantisation — timing
+resolves to 4 ms — not infinite precision. Which of the two directions is actually "front"
+remains undetermined, being the polarity question above.
 
 **Normalisation changed with it.** Dividing by the per-frame mean rescales every bearing to
 the same total drive, which asserts the threat is equally visible wherever it is and erases
