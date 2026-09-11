@@ -82,7 +82,7 @@ class Predator2DEnvironment(BaseEnvironment):
         if command.triggered_now and command.heading is not None:
             self._airborne = True
             self._takeoffs += 1
-            self._flight.start(command.heading, command.impulse)
+            self._flight.start(command.heading, command.impulse, command.powered)
         elif command.redirect and command.heading is not None and self._airborne:
             # Steer the flight already in progress; do not relaunch it.
             self._flight.steer(command.heading)

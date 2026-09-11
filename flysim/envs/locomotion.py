@@ -44,9 +44,12 @@ class EscapeFlight:
         self._heading = np.array([1.0, 0.0])
         self._speed = 0.0
         self._target_heading = None
+        self._powered = True
         self.active = False
 
-    def start(self, heading: np.ndarray, takeoff_speed: float) -> None:
+    def start(
+        self, heading: np.ndarray, takeoff_speed: float, powered: bool = True
+    ) -> None:
         self._heading = np.asarray(heading, dtype=np.float64)
         norm = float(np.linalg.norm(self._heading))
         if norm > 0:
@@ -54,6 +57,7 @@ class EscapeFlight:
         self._speed = float(takeoff_speed)
         self._elapsed = 0.0
         self._target_heading = None
+        self._powered = bool(powered)
         self.active = True
 
     def steer(self, heading: np.ndarray) -> None:
@@ -79,7 +83,10 @@ class EscapeFlight:
         if norm > 0:
             self._target_heading = target / norm
 
-        # Sustained threat means sustained powered flight.
+        # Sustained threat means sustained powered flight -- but only if the wings are
+        # actually beating. Steering a ballistic hop cannot re-power it.
+        if not self._powered:
+            return
         self._elapsed = 0.0
         self._speed = max(self._speed, self._p.fly_cruise_speed_ms)
 
@@ -101,14 +108,19 @@ class EscapeFlight:
             if abs(delta) <= limit:
                 self._target_heading = None
 
-        if self._elapsed < p.fly_flight_duration_s:
+        if self._elapsed < p.fly_flight_duration_s and self._powered:
             # Jump impulse decaying toward cruise — not toward zero.
             gap = self._speed - p.fly_cruise_speed_ms
             self._speed = p.fly_cruise_speed_ms + gap * float(
                 np.exp(-p.fly_jump_decay_per_s * dt_s)
             )
         else:
-            self._speed *= float(np.exp(-p.fly_drag_per_s * dt_s))
+            # An unpowered escape is the legs alone. It gets its own, far steeper decay:
+            # the flight drag describes a fly coasting on wings that have stopped, and
+            # applying it to a jump that never had a wingbeat produced a 22 cm glide that
+            # outlasted powered flight -- the opposite of the intended difference.
+            decay = p.fly_drag_per_s if self._powered else p.fly_hop_drag_per_s
+            self._speed *= float(np.exp(-decay * dt_s))
             if self._speed < p.landing_speed_ms:
                 self.active = False
 

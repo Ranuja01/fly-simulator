@@ -43,6 +43,10 @@ class GiantFiberDecoder(BaseMotorDecoder):
 
     def __init__(self, params: DecoderParams, populations: Mapping[str, np.ndarray]) -> None:
         self._p = params
+        # The wing muscles, where the dataset has them. A brain-only connectome does not,
+        # and there the escape is reported unpowered-but-scripted exactly as before --
+        # the flag only ever carries information when the muscles are in the volume.
+        self._flight = np.asarray(populations.get("FLIGHT", ()), dtype=np.int64)
         try:
             self._trigger = np.asarray(
                 populations[params.trigger_population], dtype=np.int64
@@ -63,6 +67,7 @@ class GiantFiberDecoder(BaseMotorDecoder):
         self._steer_count = 0
         self._last_takeoff_ms: float | None = None
         self._last_steer_ms: float | None = None
+        self._flight_seen = False
 
     @property
     def gf_spike_time_ms(self) -> float | None:
@@ -80,6 +85,13 @@ class GiantFiberDecoder(BaseMotorDecoder):
         # --- Register a GF spike -----------------------------------------------------
         # Every GF spike is serviced, not just the first: the escape is a reflex that can
         # fire again if the threat is still there when the fly lands.
+        # The wing muscles fire a few milliseconds after the command, within the takeoff
+        # delay, so this latch is set before the command is dispatched. Latched rather
+        # than sampled because a spike occupies one 0.1 ms step and the dispatch happens
+        # on a later one.
+        if self._flight.size and bool(state.spikes[self._flight].any()):
+            self._flight_seen = True
+
         if bool(state.spikes[self._trigger].any()):
             self._pending_spike_ms = state.t_ms
             if self._first_spike_ms is None:
@@ -94,6 +106,7 @@ class GiantFiberDecoder(BaseMotorDecoder):
         escape = False
         triggered_now = False
         redirect = False
+        powered_now = False
         if self._pending_spike_ms is not None:
             since_spike = state.t_ms - self._pending_spike_ms
             if p.takeoff_delay_ms <= since_spike <= p.takeoff_delay_ms + p.command_window_ms:
@@ -102,6 +115,10 @@ class GiantFiberDecoder(BaseMotorDecoder):
                 fresh = self._dispatched_spike_ms != self._pending_spike_ms
                 if fresh and self._can_take_off(state.t_ms, obs):
                     triggered_now = True
+                    powered_now = self._powered()
+                    # Each escape is judged on the wing activity since the last one, so a
+                    # later takeoff cannot inherit an earlier flight's wingbeat.
+                    self._flight_seen = False
                     self._dispatched_spike_ms = self._pending_spike_ms
                     self._last_takeoff_ms = state.t_ms
                     self._takeoff_count += 1
@@ -121,17 +138,37 @@ class GiantFiberDecoder(BaseMotorDecoder):
             redirect=redirect,
             heading=self._heading if (escape or redirect) else None,
             impulse=p.takeoff_speed_ms if escape else 0.0,
+            powered=powered_now if triggered_now else self._powered(),
             raw={
                 "gf_first_spike_t_ms": self._first_spike_ms,
                 "gf_spike_count": int(state.spike_counts[self._trigger].sum()),
                 "takeoff_count": self._takeoff_count,
                 "steer_count": self._steer_count,
+                "wing_muscles_fired": self._flight_seen,
                 "awaiting_takeoff": (
                     self._pending_spike_ms is not None
                     and self._dispatched_spike_ms != self._pending_spike_ms
                 ),
             },
         )
+
+    def _powered(self) -> bool:
+        """Did the wing muscles fire, so this escape is flight rather than a hop?
+
+        With no FLIGHT population in the connectome there is nothing to read, and the
+        answer is True -- the previous behaviour, which assumed powered flight. Assuming
+        it is the honest default when the muscles are outside the imaged volume; on a CNS
+        dataset the assumption is replaced by a measurement.
+        """
+        if not self._flight.size:
+            return True
+        return self._flight_seen
+
+    # Known limitation: `LIFBrain.silence` gates a neuron's OUTPUT but leaves it spiking
+    # so its voltage stays inspectable, and this reads `state.spikes`. Lesioning DLMn
+    # directly therefore still reads as a wingbeat. Lesioning the PSI upstream works
+    # correctly and is the meaningful experiment; a `BrainState` field for spikes that
+    # actually left the neuron would close the gap.
 
     def _can_take_off(self, t_ms: float, obs: EnvObservation) -> bool:
         """Is the body physically able to jump right now?

@@ -66,7 +66,9 @@ SERIES_STYLE: dict[str, tuple[str, object, float, str]] = {
     "INH": (C_INH, (0, (1, 2)), 1.4, "INH (inhibition)"),
     "GF": (C_GF, "solid", 2.6, "GF (giant fiber)"),
     # Only present on a CNS dataset, where the Giant Fiber actually reaches muscle.
-    "MOTOR": ("#4a3aa7", (0, (3, 1, 1, 1)), 2.2, "MOTOR (muscle)"),
+    "MOTOR": ("#4a3aa7", (0, (3, 1, 1, 1)), 2.2, "MOTOR (jump muscle)"),
+    # The wing arm of the same circuit: GF -> PSI -> DLMn.
+    "FLIGHT": ("#9b5de5", (0, (5, 1, 1, 1)), 2.0, "FLIGHT (wing muscle)"),
 }
 
 # Frames to hold on screen after the episode ends, so the final state is readable.

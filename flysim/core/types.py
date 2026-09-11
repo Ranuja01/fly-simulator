@@ -161,5 +161,14 @@ class MotorCommand:
     impulse: float = 0.0
     """Takeoff speed in m/s to apply along ``heading``."""
 
+    powered: bool = False
+    """Whether the wing muscles were recruited, so the jump becomes powered flight.
+
+    The escape has two actuators. The jump is the tergotrochanteral muscle, driven by
+    TTMn; the wingbeat is the dorsal longitudinal muscles, driven by DLMn through the PSI.
+    A fly can leave the ground on the legs alone, and the result is a short ballistic hop
+    rather than flight. Which of the two happened is READ from the muscle here, on a CNS
+    dataset that contains both; the kinematics of each remain scripted."""
+
     raw: dict[str, Any] = field(default_factory=dict)
     """Decoder diagnostics (GF spike time, latency) for logging and display."""

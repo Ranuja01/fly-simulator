@@ -174,6 +174,18 @@ class EnvParams:
     """Deceleration once flight ends, 1/s. High enough that landing takes a fraction of a
     second rather than seconds."""
 
+    fly_hop_drag_per_s: float = 30.0
+    """Deceleration of an UNPOWERED escape -- legs only, wings never recruited, 1/s.
+
+    Much higher than `fly_drag_per_s`, which describes a fly coasting on wings that have
+    stopped beating. Without a wingbeat there is nothing holding the animal up, so the
+    jump is spent almost immediately: at this value a 1.6 m/s takeoff is down in about
+    0.11 s having covered roughly 5 cm, against 0.5 s and 22 cm on the flight drag.
+
+    This number is SCRIPTED, chosen so an unpowered escape reads as a hop rather than a
+    glide. What is measured is *which of the two happens* -- that comes from whether the
+    dorsal longitudinal motor neurons fired. The shape of each is still invented."""
+
     landing_speed_ms: float = 0.06
     """Below this speed the fly is considered to have landed, which re-arms the reflex.
     The escape is a repeatable reflex, not a one-shot: a fly that lands next to a still-

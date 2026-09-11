@@ -130,6 +130,30 @@ Deliberately short and specific. Every entry needs a citable reason to be here; 
 place to record established anatomy, not a knob."""
 
 
+SUPRATHRESHOLD_SYNAPSE_PA = ELECTRICAL_SYNAPSE_PA
+"""Current per spike across a chemical synapse known to be reliably suprathreshold, pA.
+
+The same number as the electrical case, because the requirement is the same: one
+presynaptic spike must carry the target across the same 7 mV gap with the same Shiu
+parameters. The *reason* the uniform scaling misses it is different, which is why it is a
+different table. A gap junction is absent from EM data altogether; this connection is
+present and simply under-weighted, because one global picoamps-per-synapse constant cannot
+also express that a particular pathway is built to be relied on."""
+
+SUPRATHRESHOLD_SYNAPSES: tuple[tuple[str, str], ...] = (
+    ("PSI", "DLMn c-f"),   # wing interneuron -> dorsal longitudinal (wing depressor)
+    ("PSI", "DLMn a, b"),
+)
+"""Chemical synapses whose defining property is reliability, not strength.
+
+The PSI is the wing arm of the escape: the Giant Fiber drives it electrically, and it in
+turn drives the dorsal longitudinal motor neurons that power the wingbeat. It is the
+strongest PSI output in the dataset by a wide margin -- 449 synapses across ten cells --
+and under the uniform 0.002 pA/synapse it delivered under a picoamp, so the flight muscles
+never fired and every escape was a bare jump. Same failure as GF->TTMn before the
+electrical table, arrived at from the opposite direction."""
+
+
 def _client(dataset: str):
     """Authenticated NeuPrint client, imported lazily to keep the starter path clean."""
     from neuprint import Client
@@ -151,8 +175,13 @@ def assign_population(cell_type: str, superclass: str, nt: str) -> str:
     sc = (superclass or "").lower()
     upper = (cell_type or "").upper()
 
-    # Motor and efferent cells are the entire reason for using this dataset.
+    # Motor and efferent cells are the entire reason for using this dataset. The flight
+    # muscles are split out from the jump muscle: they are driven by a different arm of
+    # the same circuit (GF -> PSI -> DLMn, wings) and mean a different behaviour, so a
+    # decoder that lumps them cannot tell a jump from a jump that becomes flight.
     if "motor" in sc or "efferent" in sc:
+        if upper.startswith(("DLMN", "DVMN")):
+            return "FLIGHT"
         return "MOTOR"
     if upper == "DNP01":
         return "GF"
@@ -300,14 +329,22 @@ def build_neuprint(
     type_of = neurons["type"].astype(str)
     pre_types = connections.pre.map(type_of).fillna("")
     post_types = connections.post.map(type_of).fillna("")
-    electrical = np.zeros(len(connections), dtype=bool)
-    for pre_type, post_type in ELECTRICAL_SYNAPSES:
-        electrical |= (pre_types == pre_type).to_numpy() & (post_types == post_type).to_numpy()
-    if electrical.any():
-        data = np.where(electrical, ELECTRICAL_SYNAPSE_PA, data).astype(np.float32)
-        pairs = ", ".join(f"{a}->{b}" for a, b in ELECTRICAL_SYNAPSES)
-        print(f"  {int(electrical.sum())} electrical synapses restored ({pairs}) "
-              f"at {ELECTRICAL_SYNAPSE_PA} pA/spike -- absent from EM connectome data")
+    for table, current, note in (
+        (ELECTRICAL_SYNAPSES, ELECTRICAL_SYNAPSE_PA,
+         "electrical synapses restored -- absent from EM connectome data"),
+        (SUPRATHRESHOLD_SYNAPSES, SUPRATHRESHOLD_SYNAPSE_PA,
+         "reliable chemical synapses raised -- under-weighted by a uniform pA/synapse"),
+    ):
+        selected = np.zeros(len(connections), dtype=bool)
+        for pre_type, post_type in table:
+            selected |= (
+                (pre_types == pre_type).to_numpy()
+                & (post_types == post_type).to_numpy()
+            )
+        if selected.any():
+            data = np.where(selected, current, data).astype(np.float32)
+            pairs = ", ".join(f"{a}->{b}" for a, b in table)
+            print(f"  {int(selected.sum())} {note} ({pairs}) at {current} pA/spike")
 
     nonzero = data != 0.0
     dropped = int((~nonzero).sum())
