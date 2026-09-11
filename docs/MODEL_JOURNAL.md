@@ -186,12 +186,33 @@ About fivefold, which is not hopeless. But the shortfall is not really per-synap
 threefold in *active cells*, so by the leg muscles a cell has almost no simultaneously
 active presynaptic partners to summate from. The failure is convergence, not gain.
 
-Raising `pa_per_synapse` fivefold would push `POSTURE` over threshold and is ruled out:
-0.007 already makes the escape fire at 8.4 degrees. The escape tolerates 0.002 only because
-GF->TTMn was restored by hand at 55 pA, so every pathway that was not hand-propped is
-calibrated around an artificial boost. What is missing is whatever lets real circuits
-propagate through four stages -- recurrent amplification, dendritic nonlinearity, or a
-synapse-count-to-conductance relation that is not linear.
+**The cause is not biology, it is a calibration error, and it is mine.**
+
+The postural motor neurons are not missing input. Checked against the full dataset, we hold
+**100%** of their presynaptic partners and synapses: 133 partners, 3,108 synapses each. So
+do the arithmetic at 1 GOhm, where 7 mV needs 7 pA held steady:
+
+| cell | synapses | at 0.002 pA | |
+|---|---|---|---|
+| postural motor neuron | 3,108 | 6.22 pA | 89% of threshold — **can never fire** |
+| typical descending neuron | 205 | 0.41 pA | 6% of threshold — **can never fire** |
+
+That is with *every* input firing continuously. These cells are incapable of spiking under
+any stimulus at this calibration.
+
+`pa_per_synapse` is a physiological constant — how much current one synapse delivers — and
+it was fitted to control a behavioural quantity, the angle at which the escape triggers.
+Pushing it to 0.002 to stop the reflex being twitchy made the whole network electrically
+dead, and the one pathway that mattered was then propped up by hand: GF->TTMn at 55 pA,
+twenty-seven thousand times the uniform value. The model behaves like a twelve-neuron
+circuit because that is what it is; the rest cannot fire by construction.
+
+**The fix is to stop the two constants doing each other's jobs.** Set `pa_per_synapse` from
+physiology so cells fire from their measured convergence, and control the escape threshold
+with `encoder.gain_pa`, which is the knob that actually means "how strongly does looming
+drive LC4". At 0.007 a postural neuron reaches 311% of threshold, so the propagation
+problem may substantially dissolve; the escape would then fire far too early and the
+encoder gain comes down to compensate. Untested as yet.
 
 ## 3. Decisions
 
