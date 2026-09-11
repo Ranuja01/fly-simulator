@@ -195,6 +195,14 @@ class SimulationRunner:
         fired, and the instantaneous values can be much lower if the threat stopped.
         """
 
+        self.edges_missing_heading = 0
+        """Re-attached edges that arrived with no heading -- the ones that used to be
+        discarded by the environment, producing a takeoff the neurons commanded and the
+        body never performed."""
+
+        self.reattached_edges = 0
+        """Frames whose takeoff edge was raised on a non-final substep."""
+
         self.takeoff_events: list[dict] = []
         """One record per takeoff: when, how close, how fast, and on what drive."""
 
@@ -242,6 +250,10 @@ class SimulationRunner:
         command = MotorCommand(t=obs.t, escape=False)
         triggered_this_frame = False
         redirected_this_frame = False
+        # The command that actually raised each edge, kept whole. Re-attaching the flag
+        # alone is not enough: see below.
+        trigger_command: MotorCommand | None = None
+        redirect_command: MotorCommand | None = None
 
         frame_spikes = np.zeros(self.brain.size, dtype=bool)
 
@@ -250,6 +262,10 @@ class SimulationRunner:
             command = self.decoder.decode(state, obs)
             triggered_this_frame |= command.triggered_now
             redirected_this_frame |= command.redirect
+            if command.triggered_now and trigger_command is None:
+                trigger_command = command
+            if command.redirect and redirect_command is None:
+                redirect_command = command
             frame_spikes |= state.spikes
 
             store_voltage = self._substep_counter % decimation == 0
@@ -263,11 +279,59 @@ class SimulationRunner:
         # The environment is stepped ONCE per frame with the final substep's command, but
         # both of these are single-substep edges. Without re-attaching them, an edge raised
         # on any of the other substeps is silently dropped -- measured at 36 of 376 steering
-        # commands surviving before this was fixed.
-        if triggered_this_frame and not command.triggered_now:
-            command = replace(command, triggered_now=True)
-        if redirected_this_frame and not command.redirect:
-            command = replace(command, redirect=True)
+        # commands surviving before this was first fixed.
+        #
+        # Re-attaching the FLAG alone was not enough, and that is why the whole command is
+        # kept now. The environment gates on `heading is not None`, and the decoder only
+        # populates heading while its command window is open -- a bounded interval after
+        # the triggering spike, which a NEW spike restarts from zero. So the final substep
+        # of a frame can sit outside the window that the triggering substep was inside,
+        # either because the window elapsed or because the Giant Fiber fired again. Either
+        # way the last command carries escape=False and heading=None, the re-attached flag
+        # arrived with no direction, and the environment discarded the takeoff: the Giant
+        # Fiber fired, the muscles fired, the telemetry recorded it, and the fly did not
+        # move.
+        #
+        # Found in interactive runs as 5 recorded takeoffs against 4 performed, and 7
+        # against 5. Reproduced headlessly by hovering the threat on the fly, where the
+        # Giant Fiber fires repeatedly: one edge re-attached, one missing its heading.
+        if trigger_command is not None and not command.triggered_now:
+            # Counted because this is the path that used to lose the takeoff. A non-zero
+            # count with matching commanded/performed totals is the fix working; a
+            # non-zero count with a mismatch is it broken again.
+            self.reattached_edges += 1
+            if command.heading is None:
+                # The condition the environment discards on. Counted separately because
+                # a re-attached edge is harmless; a re-attached edge with no heading is
+                # the takeoff that never happened.
+                self.edges_missing_heading += 1
+            command = replace(
+                command,
+                triggered_now=True,
+                escape=True,
+                heading=trigger_command.heading,
+                impulse=trigger_command.impulse,
+                # Wing recruitment is judged over the FRAME, not at the instant of
+                # dispatch. The takeoff is dispatched `takeoff_delay_ms` after the
+                # trigger spike, and the dorsal longitudinal motor neurons fire a
+                # couple of milliseconds after THAT -- measured GF 1179.2, TTMn 1184.9,
+                # dispatch 1189.9, DLMn 1192.0. Reading at dispatch therefore reports
+                # every escape as unpowered, which turned the first jump into a hop and
+                # provoked an immediate second takeoff. The wings really do engage just
+                # after the legs push, and one environment frame is the resolution at
+                # which that distinction exists here.
+                powered=trigger_command.powered or command.powered,
+            )
+        if redirect_command is not None and not command.redirect:
+            command = replace(
+                command,
+                redirect=True,
+                heading=(
+                    command.heading
+                    if command.heading is not None
+                    else redirect_command.heading
+                ),
+            )
 
         if triggered_this_frame:
             self.takeoff_geometry.append((obs.distance, obs.threat_size))
@@ -370,6 +434,8 @@ class SimulationRunner:
             ),
             "escape_angular_size_deg_all": [round(a, 1) for a in angles],
             "takeoff_events": self.takeoff_events,
+            "reattached_edges": self.reattached_edges,
+            "edges_missing_heading": self.edges_missing_heading,
             "final_distance_m": self.observation.distance,
             "first_spike_ms": first_spikes,
             "active_substeps": counts,

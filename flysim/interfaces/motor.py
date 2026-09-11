@@ -93,6 +93,12 @@ class GiantFiberDecoder(BaseMotorDecoder):
             self._flight_seen = True
 
         if bool(state.spikes[self._trigger].any()):
+            # A fresh command starts a fresh judgement about the wings, so a later escape
+            # cannot inherit an earlier flight's wingbeat. Reset HERE rather than at
+            # dispatch: the trigger spike precedes the wing muscles, so this window opens
+            # before they can fire, where a dispatch-time reset would open after.
+            if self._pending_spike_ms is None or state.t_ms > self._pending_spike_ms:
+                self._flight_seen = False
             self._pending_spike_ms = state.t_ms
             if self._first_spike_ms is None:
                 self._first_spike_ms = state.t_ms
@@ -116,9 +122,6 @@ class GiantFiberDecoder(BaseMotorDecoder):
                 if fresh and self._can_take_off(state.t_ms, obs):
                     triggered_now = True
                     powered_now = self._powered()
-                    # Each escape is judged on the wing activity since the last one, so a
-                    # later takeoff cannot inherit an earlier flight's wingbeat.
-                    self._flight_seen = False
                     self._dispatched_spike_ms = self._pending_spike_ms
                     self._last_takeoff_ms = state.t_ms
                     self._takeoff_count += 1

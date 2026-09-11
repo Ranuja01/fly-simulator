@@ -199,6 +199,18 @@ def run_check(config: SimConfig, connectome_kwargs: dict | None = None) -> int:
     require(s["outcome"] == "escaped", "fly escapes the predator")
     require(s["takeoffs"] == 1, f"exactly one takeoff (got {s['takeoffs']})")
 
+    # Every commanded takeoff must actually be performed. These two counts come from
+    # opposite sides of the boundary -- the decoder's edges as the runner recorded them,
+    # and what the environment did about them -- so a command lost in transit shows up
+    # here as a mismatch. One HAS been lost, twice: the substep edge re-attached without
+    # the heading the environment gates on.
+    commanded = len(s["takeoff_events"])
+    require(
+        commanded == s["takeoffs"],
+        f"every commanded takeoff was performed ({commanded} commanded, "
+        f"{s['takeoffs']} performed)",
+    )
+
     first = s["first_spike_ms"]
     require(first["LC4"] is not None, "LC4 fires")
     require(first["GF"] is not None, "GF fires")

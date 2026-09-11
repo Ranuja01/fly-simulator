@@ -309,7 +309,9 @@ class MotionEncoder(BaseSensoryEncoder):
             currents=currents,
             raw={
                 "sweep_rad_s": self._sweep_rad_s,
-                "motion_drive_pa": float(drive),
+                # Reported AFTER the ceiling, so the number means what reached a neuron.
+                "motion_drive_pa": float(min(drive, p.max_current_pa)),
+                "motion_drive_raw_pa": float(drive),
                 "motion_direction": ("a" if rate > 0 else "b" if rate < 0 else "none"),
                 "motion_occupancy": occupancy,
             },
