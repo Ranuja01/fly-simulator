@@ -171,6 +171,28 @@ behaves like a twelve-neuron circuit with a large inert scaffold attached.
 That single fact now blocks aiming, steering, walking and optomotor behaviour alike, which
 makes it the most valuable thing to work on and the hardest.
 
+**How short is it?** Peak depolarisation reached during one approach, against the 7 mV a
+cell must cross from rest:
+
+| population | reaches | |
+|---|---|---|
+| `DN` | 7.00 mV | fires |
+| `PMN` | 7.00 mV | fires |
+| `MOTOR` | 6.90 mV | fires |
+| `POSTURE` | **1.33 mV** | 19% of threshold, short by 5.7 mV |
+
+About fivefold, which is not hopeless. But the shortfall is not really per-synapse strength:
+`DN` fires 14 of 268 cells, `PMN` 5 of 14,275, `POSTURE` 0 of 137. Each stage loses roughly
+threefold in *active cells*, so by the leg muscles a cell has almost no simultaneously
+active presynaptic partners to summate from. The failure is convergence, not gain.
+
+Raising `pa_per_synapse` fivefold would push `POSTURE` over threshold and is ruled out:
+0.007 already makes the escape fire at 8.4 degrees. The escape tolerates 0.002 only because
+GF->TTMn was restored by hand at 55 pA, so every pathway that was not hand-propped is
+calibrated around an artificial boost. What is missing is whatever lets real circuits
+propagate through four stages -- recurrent amplification, dendritic nonlinearity, or a
+synapse-count-to-conductance relation that is not linear.
+
 ## 3. Decisions
 
 ### 3.1 Representation
