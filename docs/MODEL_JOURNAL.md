@@ -325,10 +325,38 @@ front/back before it starts. The reference is now fixed — the mean weight for 
 threat — so total drive varies with bearing. A head-on approach is then unchanged by
 construction, and the scripted escape reads 16.7 degrees with tuning on or off.
 
-**Two caveats.** Drive saturates at 140 pA, so magnitude differences vanish at close range
-and any front/back signal lives in the approach ramp rather than the plateau. And the
-spread of preferred azimuths — mostly lateral, fewer frontal and rear — follows from mapping
-the anterior-posterior coordinate onto a circle, which is a choice, not a measurement.
+**Saturation is now a compression, not a clip** — ``ceiling * tanh(x / ceiling)``. A hard
+clip destroys information the moment two inputs both exceed it: they come out identical and
+any comparison between them is gone. Left/right survived clipping because it contrasts a
+driven eye against a SILENT one and zero stays zero; front/back is a magnitude contrast
+*within* an eye, so a ceiling erases it. Elevation in 3D would have the same shape and the
+same vulnerability.
+
+**It did not, however, fix front/back at the muscle, which is what it was meant to do.**
+The escape threshold is unchanged (16.7 degrees either way) and DNp04 still separates by
++127 ms, but TTMn still shows front -56 ±13 against rear -100 ±65. The reason is wiring:
+
+| DN | → TTMn | → PSI | → DLMn |
+|---|---|---|---|
+| DNp01 | 90 | 9 | 0 |
+| DNp04 | **0** | 14 | 0 |
+| DNp03 | 0 | 0 | **524** |
+| DNp06 | 53 | 75 | 0 |
+| DNp02 | 26 | 44 | 0 |
+
+**DNp04 has no synapses onto TTMn at all.** The one pair carrying front/back does not reach
+the jump muscle; it reaches PSI, which drives the wings. So front/back was never going to
+appear at TTMn whatever the saturation did — and that is biologically sensible, the jump
+being coarse and ballistic while the wings steer. The place to look for front/back in the
+motor output is DLMn, not TTMn.
+
+The table also shows **DNp03 → DLMn at 524 synapses**, larger than the PSI→DLMn connection
+already restored, currently running at the uniform 0.002 pA and therefore silent. A major
+descending input to the flight muscles is being ignored.
+
+**One caveat remains.** The spread of preferred azimuths — mostly lateral, fewer frontal and
+rear — follows from mapping the anterior-posterior coordinate onto a circle, which is a
+choice rather than a measurement.
 
 ### The experiment, run before implementing anything
 

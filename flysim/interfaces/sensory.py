@@ -49,6 +49,27 @@ from flysim.core.base import BaseSensoryEncoder
 from flysim.core.types import EnvObservation, SensoryPacket
 
 
+def _soft_saturate(x: np.ndarray | float, ceiling: float) -> np.ndarray:
+    """Compress toward a ceiling instead of clipping at it.
+
+    A hard clip destroys information the moment two inputs both exceed the limit: they come
+    out identical, and any comparison between them is gone. That is not a detail here. The
+    left/right signal survives clipping because it is a contrast between a driven eye and a
+    SILENT one, and zero stays zero — but front/back is a contrast in magnitude within the
+    same eye, so once both exceed the ceiling the two directions become indistinguishable.
+    Measured: front/back separates at DNp04 by 128 ms during the approach, and is gone by
+    the time the threat is close and everything is pinned at 140 pA.
+
+    ``ceiling * tanh(x / ceiling)`` is monotonic everywhere, so ordering is never lost; it
+    is within a few percent of linear well below the ceiling, so the operating range is
+    barely touched; and it approaches the ceiling asymptotically rather than hitting it.
+    Real neurons compress rather than clip, so this is also the less invented choice.
+    """
+    if ceiling <= 0:
+        return np.asarray(x, dtype=np.float32)
+    return (ceiling * np.tanh(np.asarray(x, dtype=np.float64) / ceiling)).astype(np.float32)
+
+
 def _relative_velocity(obs: EnvObservation, efference_copy: float) -> np.ndarray:
     """Threat velocity as the fly's visual system should treat it.
 
@@ -272,8 +293,8 @@ class LoomingEncoder(BaseSensoryEncoder):
         tuning = self._hemifield_weights(obs)
 
         currents = np.zeros(self._n, dtype=np.float32)
-        currents[self._target] = np.clip(
-            raw_drive_pa * self._gains * tuning, 0.0, p.max_current_pa
+        currents[self._target] = _soft_saturate(
+            np.maximum(raw_drive_pa * self._gains * tuning, 0.0), p.max_current_pa
         )
 
         injected = currents[self._target]
@@ -301,7 +322,7 @@ class LoomingEncoder(BaseSensoryEncoder):
                     float(injected[self._hemisphere[self._target] > 0].mean())
                     if left else 0.0
                 ),
-                "saturated": bool(np.any(injected >= p.max_current_pa)),
+                "saturated": bool(np.any(injected >= 0.95 * p.max_current_pa)),
                 "discontinuity": discontinuity,
             },
         )
@@ -429,7 +450,7 @@ class MotionEncoder(BaseSensoryEncoder):
         # is what makes the pair a direction-selective signal rather than a speedometer.
         active = self._preferring_positive if rate > 0 else self._preferring_negative
         if active.size:
-            currents[active] = min(drive, p.max_current_pa)
+            currents[active] = float(_soft_saturate(drive, p.max_current_pa))
 
         return SensoryPacket(
             t=obs.t,
@@ -437,7 +458,7 @@ class MotionEncoder(BaseSensoryEncoder):
             raw={
                 "sweep_rad_s": self._sweep_rad_s,
                 # Reported AFTER the ceiling, so the number means what reached a neuron.
-                "motion_drive_pa": float(min(drive, p.max_current_pa)),
+                "motion_drive_pa": float(_soft_saturate(drive, p.max_current_pa)),
                 "motion_drive_raw_pa": float(drive),
                 "motion_direction": ("a" if rate > 0 else "b" if rate < 0 else "none"),
                 "motion_occupancy": occupancy,
