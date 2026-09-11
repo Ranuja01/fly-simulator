@@ -217,9 +217,20 @@ def run_check(config: SimConfig, connectome_kwargs: dict | None = None) -> int:
     if first["LC4"] is not None and first["GF"] is not None:
         require(first["GF"] > first["LC4"],
                 f"GF ({first['GF']:.1f} ms) fires after LC4 ({first['LC4']:.1f} ms)")
-    if first.get("PMN") is not None and first["GF"] is not None:
-        require(first["GF"] > first["PMN"],
-                f"GF fires after the premotor pool ({first['PMN']:.1f} ms)")
+    # SOMETHING must relay between the visual cells and the Giant Fiber, and this used to
+    # be asserted of "PMN" while guarded by `is not None` -- so when the premotor pool went
+    # completely silent the check did not fail, it vanished from the output. A check that
+    # can disappear without failing is worse than no check.
+    #
+    # The pool really is silent: 11,437 cells, zero spikes. The only cells in it that ever
+    # participated were descending neurons mislabelled as premotor, and now that they have
+    # their own population the relay is visible as what it is.
+    relay = next((p for p in ("DN", "PMN") if first.get(p) is not None), None)
+    require(relay is not None,
+            "some population relays between LC4 and the Giant Fiber")
+    if relay is not None and first["GF"] is not None:
+        require(first["GF"] > first[relay],
+                f"GF fires after the {relay} relay ({first[relay]:.1f} ms)")
 
     # Only a CNS dataset has motor neurons at all; on a brain-only connectome the Giant
     # Fiber's targets are outside the volume and there is nothing downstream to check.

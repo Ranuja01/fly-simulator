@@ -185,6 +185,15 @@ def assign_population(cell_type: str, superclass: str, nt: str) -> str:
         return "MOTOR"
     if upper == "DNP01":
         return "GF"
+    # The rest of the descending population. DNp01 is the Giant Fiber and keeps its own
+    # population because the decoder triggers on it, but it is not even the largest target
+    # of the visual projection neurons -- LC4 and LPLC2 drive ten bilateral descending
+    # pairs, each perfectly ipsilateral, reading partly disjoint subsets of the visual
+    # population. Roughly 78% of that output used to land in the premotor bucket, where it
+    # was invisible. Identified by the dataset's own superclass rather than by name, and
+    # matched exactly so that `sensory_descending` is not swept in with it.
+    if sc == "descending_neuron":
+        return "DN"
     if upper.startswith(("LC4", "LPLC2")) or sc == "visual_projection":
         return "LC4"
     # T4 and T5 are the fly's elementary motion detectors -- T4 for moving light edges,
