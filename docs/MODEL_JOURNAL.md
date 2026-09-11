@@ -119,6 +119,58 @@ DNp01 (Giant Fiber)  ->  PSI, TTMn  ->  DLMn
 
 ---
 
+## 2b. Inventory: what works, and how much of the brain is doing it
+
+**How much of the network ever fires.** Four hard approaches from four bearings, counting
+distinct neurons that spiked at least once:
+
+| population | spiked | present | |
+|---|---|---|---|
+| `LC4` | 966 | 966 | 100% — but these are driven directly by the encoder |
+| `GF` | 2 | 2 | 100% |
+| `MOTOR` | 3 | 4 | 75% |
+| `FLIGHT` | 5 | 14 | 36% |
+| `DN` | 14 | 268 | 5% |
+| `INH` | 8 | 5,476 | 0.1% |
+| `PMN` | 5 | 14,275 | 0.03% |
+| `POSTURE` | 0 | 137 | 0% |
+| `T4T5` | 0 | 6,790 | 0% (silent without `--motion`) |
+| **total** | **1,003** | **27,932** | **3.6%** |
+
+Take away the 966 cells the encoder injects current into and **37 neurons downstream ever
+fire**. That is the working brain. Everything else is anatomically present and
+electrically silent.
+
+**Behaviour, against what a real fly does in a flat arena.**
+
+| behaviour | present? | driven by |
+|---|---|---|
+| decide when to escape | yes | **neurons** |
+| discriminate approach speed | yes | **neurons** |
+| tell left from right | yes | **neurons** |
+| tell front from rear | at DNp04 only | **neurons**, unread |
+| flight versus a bare hop | yes | **neurons** |
+| aim the jump | no | circuit present, never fires |
+| escape direction | yes | scripted geometry |
+| steer in flight | yes | scripted geometry |
+| walk, turn, stand, land | yes | scripted kinematics |
+| spontaneity | yes | scripted RNG; a LIF cell at rest never spikes |
+| optomotor turning | no | T4/T5 driven, no behavioural readout |
+| groom | no | — |
+| odour, wind, taste, light | no | no encoder for any of them |
+| courtship, aggression | no | neurons largely outside the subgraph |
+| learning | no | no plasticity in the engine |
+
+**How close is this to a fly moving in 2D?** One reflex is genuinely neural at its decision
+point, and its motor consequences are scripted. Everything the animal does between escapes
+is kinematics. The gap is not mostly missing anatomy any more — the postural fetch showed
+the full chain from eye to leg muscle is present and still does not conduct. The gap is
+that drive does not survive more than a synapse or two, so a connectome with 27,932 cells
+behaves like a twelve-neuron circuit with a large inert scaffold attached.
+
+That single fact now blocks aiming, steering, walking and optomotor behaviour alike, which
+makes it the most valuable thing to work on and the hardest.
+
 ## 3. Decisions
 
 ### 3.1 Representation
