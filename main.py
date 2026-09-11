@@ -321,6 +321,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                              "Defaults to $FLYSIM_CACHE_DIR/flywire/<version>.")
     parser.add_argument("--flywire-version", type=str, default="v783",
                         help="FlyWire public release to load.")
+    parser.add_argument("--postural", action="store_true",
+                        help="Include the leg motor pool that aims the jump, not just the "
+                             "escape reflex that fires it. Larger and slower.")
     parser.add_argument("--retinotopy", action="store_true",
                         help="Tune looming drive to the eye that can see the threat, so "
                              "direction reaches the neurons instead of being discarded.")
@@ -422,6 +425,13 @@ def main(argv: list[str] | None = None) -> int:
         # motor neurons rather than terminating at the neck.
         connectome_kwargs = {"hops": args.flywire_hops,
                              "max_neurons": args.flywire_max_neurons}
+        if args.postural:
+            # Seeding on the leg motor pool as well as the escape reflex. Growing outward
+            # from the reflex alone caught only its edge -- 2 Sternotrochanter MN of 14,
+            # on 6-29 synapses of descending input, which never fire.
+            from flysim.brain.neuprint_source import ESCAPE_AND_POSTURE_SEED_TYPES
+            connectome_kwargs["seed_types"] = ESCAPE_AND_POSTURE_SEED_TYPES
+            connectome_kwargs["max_neurons"] = max(args.flywire_max_neurons, 40_000)
         if args.flywire_pa is not None:
             connectome_kwargs["pa_per_synapse"] = args.flywire_pa
 

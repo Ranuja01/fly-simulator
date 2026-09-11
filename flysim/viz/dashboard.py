@@ -72,6 +72,9 @@ SERIES_STYLE: dict[str, tuple[str, object, float, str]] = {
     "MOTOR": ("#4a3aa7", (0, (3, 1, 1, 1)), 2.2, "MOTOR (jump muscle)"),
     # The wing arm of the same circuit: GF -> PSI -> DLMn.
     "FLIGHT": ("#9b5de5", (0, (5, 1, 1, 1)), 2.0, "FLIGHT (wing muscle)"),
+    # Leg muscles. They aim the jump rather than firing it, and are silent until the
+    # postural circuit is actually present in the network.
+    "POSTURE": ("#3f8f6b", (0, (1, 1)), 1.5, "POSTURE (leg muscle)"),
 }
 
 # Frames to hold on screen after the episode ends, so the final state is readable.

@@ -157,7 +157,7 @@ class SimulationRunner:
 
         available = set(brain.populations)
         wanted = track_populations or tuple(
-            p for p in ("T4T5", "LC4", "PMN", "INH", "DN", "GF", "MOTOR", "FLIGHT") if p in available
+            p for p in ("T4T5", "LC4", "PMN", "INH", "DN", "GF", "MOTOR", "FLIGHT", "POSTURE") if p in available
         )
         missing = set(wanted) - available
         if missing:

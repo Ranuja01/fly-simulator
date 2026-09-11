@@ -591,6 +591,42 @@ outside the noise floor, but the degree-preserving row proves less than it appea
 is silent there, so it fails to flip for want of any spikes at all rather than for want of
 organisation.
 
+### The fetch for the aiming circuit, and what it revealed
+
+Seeded on the coxa-trochanter leg motor pool alongside the escape reflex
+(`--postural`): 27,932 neurons, 595,118 edges. The motor population went from 10 cells to
+157 and the descending population from 67 to 268. `Sternotrochanter MN` went from 2 cells
+to 14.
+
+The complete anatomical chain from eye to leg muscle is now present:
+
+| stage | edges | synapses |
+|---|---|---|
+| visual → descending | 2,272 | 54,893 |
+| descending → postural MN (direct) | 1,348 | 36,874 |
+| descending → VNC interneuron | 16,637 | **343,178** |
+| VNC interneuron → postural MN | 16,105 | **488,015** |
+
+The premotor route dominates the direct one by an order of magnitude, as it should — real
+descending neurons mostly drive premotor interneurons rather than motor neurons — and all
+4,374 of those interneurons are in the network.
+
+**It still does not fire.** `POSTURE` records zero spikes during an escape, and so does
+`PMN`, which is where the premotor interneurons sit. The escape itself still works (18.1
+degrees on this network against 16.7 on the smaller one).
+
+**This is the most important limitation in the model, and the fetch is what exposed it.**
+Drive attenuates stage by stage. `pa_per_synapse = 0.002` was fitted so the escape triggers
+near 16 degrees, and that pathway only conducts because two synapses were restored by hand
+at 55 pA — GF→TTMn and PSI→DLMn. Anything more than a synapse or two deep is
+sub-threshold. So the model is a single hand-propped pathway inside a large inert scaffold,
+and that was invisible while the scaffold was small.
+
+Raising `pa_per_synapse` globally is not the fix and has been measured: 0.007 makes the
+escape fire at 8.4 degrees, sensitive enough to respond to hand tremor. The problem is that
+a LIF network with uniform parameters, no dendritic amplification and no recurrent gain does
+not propagate through three or four stages, and a synapse count is not a conductance.
+
 ## 5. Neurons present, input absent
 
 A recurring shape: the cells are in the connectome and nothing drives them.

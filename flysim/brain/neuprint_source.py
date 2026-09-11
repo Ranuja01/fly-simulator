@@ -56,6 +56,32 @@ VOXEL_NM = 8.0
 DEFAULT_DATASET = "male-cns:v1.0"
 
 ESCAPE_SEED_TYPES: tuple[str, ...] = ("LC4", "LPLC2", "DNp01", "TTMn", "PSI")
+
+POSTURAL_SEED_TYPES: tuple[str, ...] = (
+    "Sternotrochanter MN",
+    "Sternal posterior rotator MN",
+    "Sternal anterior rotator MN",
+    "Tr flexor MN",
+    "Tr extensor MN",
+    "Acc. tr flexor MN",
+    "Tergotr. MN",
+)
+"""Leg motor neurons of the coxa-trochanter group -- the muscles that position the joint
+the jump pushes from.
+
+A real fly aims its escape by adjusting leg posture BEFORE the trigger fires; TTMn is the
+trigger and carries no direction in the animal any more than it does here. Growing the
+network outward from the escape reflex caught only the edge of that circuit: two
+Sternotrochanter MN out of the 14 the dataset holds, receiving 6 to 29 synapses of
+descending input, which at the fitted scaling is hundredths of a picoamp. They never fire.
+
+Seeding on them directly reaches the real thing: 128 motor cells, and 146 descending
+neurons driving them across 31,296 synapses."""
+
+ESCAPE_AND_POSTURE_SEED_TYPES: tuple[str, ...] = (
+    ESCAPE_SEED_TYPES + POSTURAL_SEED_TYPES
+)
+"""Both, so the escape pathway and the pathway that aims it live in one network."""
 """The escape circuit end to end: visual input, the command neuron, and its muscles."""
 
 # Synapse count -> picoamps. Refitted for this dataset rather than inherited from
@@ -277,9 +303,15 @@ def assign_population(cell_type: str, superclass: str, nt: str) -> str:
     # the same circuit (GF -> PSI -> DLMn, wings) and mean a different behaviour, so a
     # decoder that lumps them cannot tell a jump from a jump that becomes flight.
     if "motor" in sc or "efferent" in sc:
-        if upper.startswith(("DLMN", "DVMN")):
-            return "FLIGHT"
-        return "MOTOR"
+        # Split by ROLE, because the decoder triggers the takeoff on MOTOR firing and a
+        # leg motor neuron firing is not a takeoff. Seeding on the postural pool grew this
+        # group from 10 cells to 157, so a rule that lumped them would have launched the
+        # fly whenever it shifted its stance.
+        if upper.startswith(("DLMN", "DVMN", "MNWM")):
+            return "FLIGHT"          # wing power
+        if upper.startswith(("TTMN", "PSI")):
+            return "MOTOR"           # the jump trigger and its wing counterpart
+        return "POSTURE"             # leg muscles: they aim the jump, they do not fire it
     if upper == "DNP01":
         return "GF"
     # The rest of the descending population. DNp01 is the Giant Fiber and keeps its own
