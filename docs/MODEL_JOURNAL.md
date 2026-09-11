@@ -322,9 +322,34 @@ Measured on the male CNS:
 Perfectly ipsilateral, no crossover. Within a hemisphere the spread of Giant Fiber
 preference is exactly **0.000** — every cell converges identically onto its one GF.
 
-So **bearing can survive as left-versus-right and no finer**. "What angle" is unrecoverable
-at DNp01 regardless of how good a map sits upstream, which is a hard ceiling and worth
-knowing before building a fine one. The upside is that the surviving channel is clean.
+So at DNp01, bearing survives as left-versus-right and no finer. **That is a limit of the
+decoder, not of the data**, and reading it as a limit of the problem was a mistake worth
+recording: DNp01 is not even the largest target of the visual projection neurons.
+
+| target | synapses from LC4 + LPLC2 | | target | synapses |
+|---|---|---|---|---|
+| DNp04 | 14,978 | | DNp11 | 3,643 |
+| DNp01 | 11,198 | | DNp06 | 2,679 |
+| DNp103 | 5,231 | | DNp03 | 2,492 |
+| DNp02 | 4,205 | | DNpe056 | 1,536 |
+| DNg40 | 3,834 | | DNp05 | 1,255 |
+
+Ten bilateral descending pairs, **every one of them perfectly ipsilateral** like DNp01, so
+each is a clean left/right comparator. Roughly 78% of that descending output goes to cells
+this model currently discards into the premotor bucket.
+
+They are also **not redundant**. Mean pairwise overlap of their input sets is 0.42, with
+structure: DNp04/DNp01/DNg40/DNp06/DNp103 overlap 0.56-0.90; DNp02/DNp11/DNp03/DNp05
+overlap 0.56-0.87 among themselves but only 0.09-0.39 with the first group; DNpe056 shares
+exactly 0.00 with the whole second group. Different descending neurons read different
+subsets of the visual population — a population code, present in the data and unused.
+
+(Caveat: Jaccard is sensitive to set size, and the second group reads smaller sets, 35-53
+cells against 107-165. That inflates their mutual overlap. The 0.00 is not a size artifact.)
+
+The implication for the retinotopy work is that the decoder should read the descending
+population rather than one pair, and that bearing may be recoverable far more finely than
+the DNp01 race alone allows.
 
 This also explains the constant laterality of §4: with no retinotopy both hemispheres
 receive identical drive, so the side with more cells always wins the race to threshold. 71
