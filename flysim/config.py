@@ -213,6 +213,28 @@ class MotionParams:
     "is it sweeping across the eye", and an object can do either without the other.
     """
 
+    efference_copy: float = 1.0
+    """How much of the fly's OWN motion is cancelled before encoding, 0 to 1.
+
+    A retina cannot tell whether an image expanded because an object approached or because
+    the animal advanced. `EnvObservation.closing_speed` is computed from the RELATIVE
+    velocity and so contains both, which is physically correct and sensorily wrong: it
+    made the fly flee its own forward motion. Measured with the threat held perfectly
+    still (0.0016 m/s) while the fly flew at it at 1.04 m/s -- 50 pA of drive and two
+    mid-flight course corrections away from a motionless object. That is what a full
+    U-turn toward a stationary observer was.
+
+    Real flies solve this two ways. The spatial pattern differs -- self-motion flows the
+    whole visual field outward, an approaching object expands locally against a static
+    surround -- and that discrimination needs retinotopy this encoder does not have, in a
+    world with a background this arena does not have. What is left is efference copy: a
+    signal from the motor side that cancels the predicted sensory consequence of
+    self-generated movement, documented in Drosophila for the lobula plate.
+
+    1.0 is complete cancellation, which is available here only because the fly's motion is
+    scripted and therefore exactly known; a real corollary discharge is partial. Set to
+    0.0 to recover the raw relative-velocity behaviour."""
+
     target_population: str = "T4T5"
 
     gain_pa: float = 12.0
@@ -243,6 +265,28 @@ class MotionParams:
 @dataclass(frozen=True)
 class EncoderParams:
     """Looming (visual expansion) encoder parameters."""
+
+    efference_copy: float = 1.0
+    """How much of the fly's OWN motion is cancelled before encoding, 0 to 1.
+
+    A retina cannot tell whether an image expanded because an object approached or because
+    the animal advanced. `EnvObservation.closing_speed` is computed from the RELATIVE
+    velocity and so contains both, which is physically correct and sensorily wrong: it
+    made the fly flee its own forward motion. Measured with the threat held perfectly
+    still (0.0016 m/s) while the fly flew at it at 1.04 m/s -- 50 pA of drive and two
+    mid-flight course corrections away from a motionless object. That is what a full
+    U-turn toward a stationary observer was.
+
+    Real flies solve this two ways. The spatial pattern differs -- self-motion flows the
+    whole visual field outward, an approaching object expands locally against a static
+    surround -- and that discrimination needs retinotopy this encoder does not have, in a
+    world with a background this arena does not have. What is left is efference copy: a
+    signal from the motor side that cancels the predicted sensory consequence of
+    self-generated movement, documented in Drosophila for the lobula plate.
+
+    1.0 is complete cancellation, which is available here only because the fly's motion is
+    scripted and therefore exactly known; a real corollary discharge is partial. Set to
+    0.0 to recover the raw relative-velocity behaviour."""
 
     gain_pa: float = 26.0
     """Picoamps per unit of looming sensitivity.

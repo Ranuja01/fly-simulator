@@ -17,6 +17,12 @@ Each profile therefore records:
   is visible rather than silent,
 * and how the fit was obtained, so it can be argued with.
 
+These thresholds moved slightly when efference copy was introduced -- the fly's own
+approach no longer adds to the closing speed, so the circuit triggers marginally later.
+Measured shift: synthetic120 13.6 -> 14.2, flywire 14.2 -> 14.5, neuprint 15.9 -> 16.7,
+mock12 unchanged at 15.6. Small enough not to warrant refitting ``pa_per_synapse``, and
+recorded here rather than quietly absorbed, which is what these numbers are for.
+
 Fitting procedure
 -----------------
 ``tools/calibrate_pa.py`` sweeps ``pa_per_synapse`` and keeps the values where the circuit
@@ -102,7 +108,7 @@ PROFILES: dict[str, CalibrationProfile] = {
         encoder_gain_pa=26.0,
         pa_per_synapse=None,
         uses_population_overrides=True,
-        escape_threshold_deg=13.6,
+        escape_threshold_deg=14.2,
         notes="Same rule table as mock12 at population scale; same biophysics.",
     ),
     "flywire": CalibrationProfile(
@@ -111,7 +117,7 @@ PROFILES: dict[str, CalibrationProfile] = {
         encoder_gain_pa=26.0,
         pa_per_synapse=0.007,
         uses_population_overrides=False,
-        escape_threshold_deg=14.2,
+        escape_threshold_deg=14.5,
         notes=(
             "FAFB v783, female brain. Fitted window is roughly 0.005-0.01: above it the "
             "reflex fires at a harmless slow drift, below it the Giant Fiber never reaches "
@@ -126,7 +132,7 @@ PROFILES: dict[str, CalibrationProfile] = {
         pa_per_synapse=0.002,
         uses_population_overrides=False,
         decoder_population="MOTOR",
-        escape_threshold_deg=15.9,
+        escape_threshold_deg=16.7,
         notes=(
             "male-cns:v1.0, male brain and ventral nerve cord. Fitted independently of "
             "FlyWire: 0.007 here produced an escape at 4.4 degrees, sensitive enough to "

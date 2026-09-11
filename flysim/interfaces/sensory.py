@@ -49,6 +49,27 @@ from flysim.core.base import BaseSensoryEncoder
 from flysim.core.types import EnvObservation, SensoryPacket
 
 
+def _relative_velocity(obs: EnvObservation, efference_copy: float) -> np.ndarray:
+    """Threat velocity as the fly's visual system should treat it.
+
+    ``efference_copy`` of the animal's own velocity is removed. At 1.0 only the threat's
+    motion remains, so the fly no longer registers approach that it is itself creating;
+    at 0.0 this returns the true relative velocity that
+    :attr:`EnvObservation.closing_speed` is built from.
+    """
+    threat = np.asarray(obs.threat_velocity, dtype=np.float64)
+    own = np.asarray(obs.agent_velocity, dtype=np.float64)
+    return threat - (1.0 - float(efference_copy)) * own
+
+
+def _line_of_sight(obs: EnvObservation, distance: float) -> np.ndarray:
+    """Unit vector from fly to threat."""
+    offset = np.asarray(obs.threat_position, dtype=np.float64) - np.asarray(
+        obs.agent_position, dtype=np.float64
+    )
+    return offset / distance
+
+
 class LoomingEncoder(BaseSensoryEncoder):
     """Converts fly-predator geometry into LC4 input current."""
 
@@ -118,16 +139,21 @@ class LoomingEncoder(BaseSensoryEncoder):
         # never reached threshold. The closing speed is continuous across those substeps
         # because the environment maintains it, so this form has no such blind spot -- and
         # it is exact rather than approximate.
+        # Closing speed with the fly's own contribution cancelled -- see
+        # EncoderParams.efference_copy. At efference_copy = 0 this is exactly
+        # obs.closing_speed.
+        unit = _line_of_sight(obs, distance)
+        relative = _relative_velocity(obs, p.efference_copy)
+        closing = -float(np.dot(unit[: relative.size], relative))
+
         size = float(obs.threat_size)
-        raw_theta_dot = (
-            4.0 * size * float(obs.closing_speed) / (4.0 * distance**2 + size**2)
-        )
+        raw_theta_dot = 4.0 * size * closing / (4.0 * distance**2 + size**2)
 
         # Teleport detection on SPEED, which is scale-independent: no real object in
         # this arena moves at 6 m/s whatever its distance. Thresholding the expansion rate
         # instead made the guard tighter the closer the threat got, discarding ordinary
         # approaches at close range.
-        discontinuity = abs(float(obs.closing_speed)) > p.max_closing_speed_ms
+        discontinuity = abs(closing) > p.max_closing_speed_ms
         if discontinuity:
             raw_theta_dot = 0.0
         else:
@@ -171,6 +197,8 @@ class LoomingEncoder(BaseSensoryEncoder):
                 "theta_dot_smoothed": self._theta_dot,
                 "drive_pa": float(injected.mean()),
                 "drive_pa_max": float(injected.max()),
+                "closing_ms": closing,
+                "closing_raw_ms": float(obs.closing_speed),
                 "distance_m": distance,
                 "theta_rad": theta,
                 "theta_dot_rad_s": raw_theta_dot,
@@ -211,9 +239,11 @@ class MotionEncoder(BaseSensoryEncoder):
       network and stay silent, which is the truthful outcome rather than a fudge.
     * **T4 and T5 are driven identically.** Separating them needs luminance polarity,
       which needs a rendered image.
-    * **Self-motion is not included.** A turning fly sweeps its whole visual field, and
-      that signal dominates T4/T5 in a real animal. Adding it without the compensation
-      circuitry that cancels it would make the fly blind itself every time it turned.
+    * **Self-motion is cancelled** by ``MotionParams.efference_copy``, for the same
+      reason the looming encoder cancels it: a moving fly sweeps its own visual field,
+      and without the circuitry that discounts that, the animal responds to itself.
+      Translation is cancelled here; the fly's *rotation* is not represented at all,
+      which in a real animal is the larger of the two signals.
     """
 
     def __init__(
@@ -279,9 +309,7 @@ class MotionEncoder(BaseSensoryEncoder):
         offset = np.asarray(obs.threat_position, dtype=np.float64) - np.asarray(
             obs.agent_position, dtype=np.float64
         )
-        relative = np.asarray(obs.threat_velocity, dtype=np.float64) - np.asarray(
-            obs.agent_velocity, dtype=np.float64
-        )
+        relative = _relative_velocity(obs, p.efference_copy)
         if offset.size >= 2:
             unit = offset[:2] / distance
             cross = float(unit[0] * relative[1] - unit[1] * relative[0])
