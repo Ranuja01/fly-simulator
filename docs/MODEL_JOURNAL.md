@@ -102,6 +102,44 @@ Ground up, in small steps, each understood before the next. Not by delegating to
 accepting output — an external audit is a check on our work, not a substitute for it. The
 value here is the documented understanding, not the volume of code.
 
+## 0b. What the dataset paper says, and what it does not
+
+*Sexual dimorphism in the complete Drosophila male central nervous system connectome*, Cell,
+3 Sept 2026 (bioRxiv 10.1101/2025.10.09.680999). Read via the open preprint; the Cell
+version is paywalled.
+
+**The dataset.** 166,691 neurons including sensory axons, 46 million presynapses connected
+to 312 million PSDs, 11,691 unique cell types. `superclass` is documented as encoding
+"the direction of information flow, anatomical location and broad function" — which is what
+we had inferred from its values, so our population assignment rests on the intended meaning.
+
+**Completeness, and what it does not excuse.** 94% presynaptic and 42% postsynaptic
+completion; only **40.1%** of detected synapses have *both* partners belonging to a
+proofread neuron. That undercounts connections to incompletely traced cells — but **not**
+connections between two fully proofread ones. DNp01 and PSI are both named, proofread types,
+so the measured counts between them (L→L 9, R→L 3, R→R 2, L→R 2) are real weights, not
+tracing artefacts.
+
+That weakens the justification given for exempting them from the weight floor. The exemption
+still stands on its original ground — a gap junction is invisible to EM whatever the chemical
+count — but it should be read honestly: **applying 55 pA to all four edges asserts a
+bilateral symmetry the chemical data does not show**, since one edge is 4.5x another.
+
+**Two of our choices are unsupported by the paper.** It gives *no recommended minimum
+synapse threshold*, so `min_synapses = 5` is ours alone — and it has already cost us once.
+And it reports *no left-right hemispheric comparison*, so our finding that the left Giant
+Fiber receives 34% more convergence (6,418 against 4,780 synapses) is uncorroborated: it may
+be anatomy or it may be tracing variance, and this paper cannot distinguish them.
+
+**One worry resolved.** "Sex-specific and dimorphic neurons are concentrated in higher brain
+centres while the sensory and motor periphery are largely isomorphic." The escape pathway
+sits in that periphery, so comparing our male-CNS figures against literature measured in
+female flies — which most of the scorecard does — is justified.
+
+**What it does not contain.** No discussion of the giant fiber, LC4, LPLC2, TTMn, PSI or the
+escape circuit. It is a whole-connectome and dimorphism paper; the escape pathway has to come
+from the specialist literature.
+
 ## 1. The rule
 
 **Measured beats invented, and invention must be labelled.**
