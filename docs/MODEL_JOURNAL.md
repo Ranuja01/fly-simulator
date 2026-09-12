@@ -801,6 +801,54 @@ instance requiring that every commanded takeoff was actually performed.
 
 ---
 
+## 6b. Mistakes, and the one shape they share
+
+Kept because the errors were more instructive than the results, and because each was
+*confidently* wrong in a way that produced a plausible number.
+
+**They are the same mistake repeated: reporting a property of our own setup as a property
+of the system.**
+
+| what was concluded | what was actually true |
+|---|---|
+| "the model cannot propagate through four stages" | we stimulate one input of many; the rest is not downstream of it |
+| "PMN is inert, zero spikes" | measured only on scripted episodes; it fires under interactive drive |
+| "the descending neurons all look at the same place" | measured along the sheet's first principal axis, oblique to the body axis; along the anatomical axis they differ 0.08 to 0.61 |
+| "front/back is destroyed by saturation" | DNp04 has zero synapses onto TTMn; it was never going to appear there |
+| "soma position can serve as a receptive-field map" | LC somata sit in a rind; neighbours share no more input than distant cells |
+| "the shuffle control shows the anatomy is load-bearing" | published in a public document with **no implementation at all**, and the number was wrong |
+| "front and rear light scattered regions" | spread taken from one centroid across a bimodal distribution |
+| "raising pA/synapse will wake the network" | 25x wakes 68% more cells; strength was never the limit |
+
+Four further errors of technique, each producing confident nonsense: reading `state.spikes`
+(the final substep) instead of `frame_spikes`, losing ~90% of spikes; measuring spike
+*counts* when the signal was in *timing*; measuring at saturation, after the quantity of
+interest had been clipped away; and building a test runner without the connectome kwargs,
+so a 317-neuron graph was validated instead of the 22,973-neuron one actually run.
+
+### The countermeasure
+
+Before concluding "the system does X", ask **what in my setup could produce this observation
+regardless of the system**. In practice:
+
+* **Which path did I measure?** Scripted and interactive differ in drive strength, substep
+  handling and pointer sampling. Three separate bugs came from that alone.
+* **Which axis, metric, resolution?** An oblique axis, a count instead of a latency, a
+  clipped ceiling and a bimodal distribution each gave a clean wrong answer.
+* **What is the noise floor?** Measure it *before* the change. The 30-40 ms figure is what
+  made the direction result meaningful rather than suggestive.
+* **Is there a null?** A result a shuffled network also produces is not a result.
+* **Is the claim implemented?** If a document asserts an experiment, a reader must be able
+  to run it.
+
+### The structural error underneath
+
+The subgraph was grown outward from one reflex and then treated as "the brain". That yields
+an excellent escape circuit surrounded by cells that happen to be adjacent, and guarantees
+most of it is silent, because most of it is not downstream of the single input we supply.
+**The 3.6% activity figure is a fact about how the network was chosen and driven, not about
+connectome simulation.** Reading it as the latter was the largest error in the project.
+
 ## 7. Deliberate choices not to re-litigate
 
 * Reliable synapses are supplied in visible tables rather than folded into a scaling
