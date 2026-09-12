@@ -26,6 +26,42 @@ direction against, each looked as reasonable as the last.
 **Sight-based predator escape, recreated faithfully.** Not a whole fly. Once this is done
 it becomes the template for a second modality.
 
+### What the scorecard measures, and what it does not
+
+Written because the scorecard below can go entirely green while the model covers a sliver of
+vision, and a future session should not mistake one for the other.
+
+The work sits inside five nested scopes. Each row is contained by the one beneath it:
+
+| scope | what it is | our coverage |
+|---|---|---|
+| Ache eq. 7 | one neuron's membrane voltage during a looming disk | **2 of its 4 components** |
+| the giant fiber | one descending neuron, DNp01 | LC4+LPLC2 = **99.4%** of its optic-lobe input |
+| short-mode takeoff | the escape the GF triggers | ~**20%** of real escape takeoffs |
+| escape from looming | one visual behaviour | the fast branch only |
+| vision | ~20 optic glomeruli, each feeding its own motor program | **2 of ~20** |
+
+**Almost every scorecard row measures the top scope.** GF input composition, GF-to-muscle
+timing, the angular threshold, the LPLC2 lesion, the size and velocity channels — all of
+them are properties of one neuron's response to one stimulus class. A fully green scorecard
+would mean *the giant fiber's looming response is right*, which is a milestone and not the
+goal.
+
+**The sharpest measure of what is missing.** In Ache et al.'s control flies, short-mode
+takeoffs — the GF-dependent ones this model produces — were 26% (47/178) and 17% (18/105) of
+all takeoffs. Roughly one escape in five. The long-mode takeoff, wing elevation followed by
+leg extension, is slower but more stable and **does not require the GF at all**; we have no
+representation of it. So when our fly jumps, it always jumps the way a real fly jumps about a
+fifth of the time. That is a larger gap than the two missing inhibitory components, and it is
+invisible to every row on the scorecard.
+
+**This is not an argument for widening the scope.** The GF reflex is the right target for the
+current work: it is the best-characterised pathway in the animal, and the only one with
+published numbers precise enough to fail against. The point is that "done" here means done
+with the innermost scope. The next scopes out have names — long-mode takeoff, the other
+eighteen glomeruli, the inhibitory components of eq. 7 — and each needs its own argument
+before it is started.
+
 ### What "faithfully" means
 
 Real escape has published, measurable properties. The model is faithful to the degree it
@@ -36,18 +72,25 @@ write-up rather than from primary literature we have read.
 |---|---|---|---|
 | LC4+LPLC2 is ~30% of giant-fiber input | independently verified, 29.85% theirs / 31.3% ours | 31.3% | **pass** |
 | one GF spike, one takeoff, all-or-none | established | holds | **pass** |
-| faster looms trigger earlier | established | 37 -> 115 mm across 0.1 -> 2 m/s | **pass** |
+| faster looms -> peak at LARGER angular size | Ache Fig 4B | 24.6 -> 48.6 deg over 0.1-0.6 m/s | **pass, direction** |
+| GF fires across the loom speed range | Ache r/v 10-80 ms | fails below r/v ~12 ms | **fail at the fast end** |
 | silencing LC4 *and* LPLC2 abolishes the escape | established | no takeoff, fly captured | **pass** |
-| silencing LPLC2 nearly abolishes it | established | degrades 16.7 -> 31.8 deg only | **partial** |
+| silencing LPLC2 nearly abolishes it | established | abolished, `--channels` | **pass** |
 | TTM fires 0.93 ms after the giant fiber | their page, cited as measured | 5.7 ms | **fail, 6x** |
 | DLM fires 1.44 ms after the giant fiber | their page, cited as measured | ~12 ms | **fail, 8x** |
 | short takeoff completes under 6.87 ms | their page | not measured | **unknown** |
-| GF-mediated takeoff threshold ~39 deg angular size | von Reyn et al. 2014 | 16.7 deg | **fail, 2.3x early** |
-| GF response peaks at 42 deg angular size | Ache et al. 2019 | no size channel exists | **fail** |
-| **LC4 encodes looming SPEED; LPLC2 encodes angular SIZE** | Ache et al. 2019 | both driven identically | **fail — mechanism** |
+| GF-mediated takeoff threshold ~39 deg angular size | von Reyn et al. 2014 | 40.8 deg, `--channels` | **pass** |
+| GF response peaks at 42 deg angular size | Ache et al. 2019 | size channel peaks at 42 | **by construction** |
+| LPLC2 is silent with nothing approaching | inferred, not a cited measurement | 0 of 1501 frames | **pass** |
+| **LC4 encodes looming SPEED; LPLC2 encodes angular SIZE** | Ache et al. 2019 | split, fitted to 2 targets | **pass** |
 | LC4:LPLC2 synapse ratio onto GF | 1.79 (Ache et al.) | 1.32 | **consistent** |
 | escape direction is away from the threat | established | scripted geometry | **not neural** |
 | direction is set by pre-takeoff leg posture | established | absent, and out of reach | **out of scope** |
+
+**Every row names the encoder it was measured on.** A row measured with the combined
+encoder says nothing about the split one, and carrying one across to the other without
+re-measuring is how the speed-dependence row sat at **pass** while the split encoder was
+failing to fire at all above 0.5 m/s (Step E).
 
 Anything not on this list needs an argument before it is worked on. The propagation problem,
 the ventral nerve cord, the aiming circuit and a physics body are all off it.
@@ -83,6 +126,356 @@ against 1.79 in Ache et al., both with LC4 contributing more synapses from fewer
 papers read in full. The two independent figures agreeing (39 and 42 deg) and the anatomy
 matching give reasonable confidence, but a primary read should confirm the Gaussian's width
 before it is implemented.
+
+### Step C, run: calibrate the two channels against two targets
+
+**Subgoal.** Fix the three free parameters of the split encoder — `gain_pa` (LC4, velocity),
+`size_gain_pa` and `size_width_deg` (LPLC2, size) — against two independent published facts
+instead of the one they were fitted to.
+
+**Why it is not already done.** `--channels` reaches the published 39 degree threshold at a
+velocity gain near 4, but three parameters fitted to one number is under-determined: many
+combinations hit 39, and the one in `config.py` was picked rather than derived. A fit that
+can only be checked against the number it was fitted to is not evidence.
+
+**The second target** is the LPLC2 lesion. Ache et al. 2019 has LPLC2 carrying the size
+component and LC4 the velocity component, so silencing LPLC2 should remove size and leave
+velocity — published as *nearly abolishing* the giant-fiber escape. Our pre-split model
+degraded 16.7 -> 31.8 degrees instead, which is the signature of removing generic drive from
+a model with no size channel at all. The lesion is independent of the threshold because it
+constrains the *ratio* of the two channels, where the threshold constrains their sum.
+
+**Done-criterion — one parameter set must satisfy both:**
+
+1. Intact escape threshold within **39 +/- 3 degrees** (von Reyn et al. 2014).
+2. Silencing LPLC2 **near-abolishes** the escape — no takeoff at all, or a threshold pushed
+   far enough that the reflex has effectively stopped discriminating.
+
+If no setting in the sweep satisfies both, that is the result, and it says the split as
+implemented is wrong rather than merely mistuned. A criterion that cannot fail is not one.
+
+**What could make the measurement lie**, written before measuring:
+
+* **`build_runner` overwrites `gain_pa` from the calibration profile.** It silently
+  invalidated an entire earlier sweep, every run using 26.0 while reporting the swept value.
+  It now prints a note, but the safe move is to bypass `build_runner` and assemble the four
+  layers directly, which is what this tool does.
+* **`LIFBrain.silence` gates transmission but the neuron still spikes**, and the decoder
+  reads `state.spikes`. Harmless here — the decoder reads MOTOR, not LPLC2 — but it would
+  not be if the lesion moved downstream.
+* **Angular size at dispatch is not angular size at threshold crossing.** The published 39
+  degrees is the latter. Both must be reported so it is visible which is being compared.
+* **Approach speed sets the threshold**, and a hand-moved pointer is far faster than the
+  scripted predator. Calibrate scripted at a fixed speed; confirm interactive separately.
+  Never mix the two in one comparison.
+* **Hemifield tuning scales drive by bearing**, so it shifts the threshold on its own. The
+  sweep runs with it off, and the winning point is then re-measured with it on, reported as
+  a shift rather than folded in.
+* **A "pass" that only exists at one grid point is a coincidence.** Report the size of the
+  passing region, not just its existence.
+
+**Result: both targets met, and the fit is better determined than it was — but not fully.**
+
+Swept with `tools/calibrate_channels.py` on male-cns:v1.0 at 0.42 m/s, takeoff read from
+MOTOR. 108 episodes.
+
+| what the lesion does | velocity gain 2 | 3 | 4 | 5 | 7 | 9 |
+|---|---|---|---|---|---|---|
+| escape after silencing LPLC2 | abolished | abolished | abolished | abolished | 79.2 deg | 56.5 deg |
+
+**The lesion bounds the velocity gain, and nothing else.** With LPLC2 silenced the size
+channel is gone entirely, so the lesioned threshold depends on the velocity gain alone —
+which is what makes it an independent constraint rather than a restatement of the first.
+Above gain 5 the velocity channel alone still drives a takeoff, contradicting the published
+near-abolition. At or below 5 the reflex is abolished, matching.
+
+**The threshold then picks the size channel.** At velocity gain 4, hemifield tuning off:
+
+| size gain | width 14 | width 18 | width 22 |
+|---|---|---|---|
+| 70 | 52.5 | 43.2 | 43.2 |
+| 90 | 45.9 | **40.8 PASS** | 34.9 |
+| 110 | 43.2 | **36.6 PASS** | 29.2 |
+
+The passing region is a **ridge, not a point** — size gain and width trade off against each
+other, as two parameters scaling one Gaussian's contribution near its peak must. Width 18 is
+required across the sweep; size gain 90 and 110 both pass. So two targets fix one parameter,
+bound a second and leave the third loose. **Three unknowns against two equations is still
+under-determined, by exactly one dimension.** The defaults already in `config.py` (gain 4,
+size 90, width 18) sit inside the band rather than on its edge, which is the most that can
+be claimed for them.
+
+**Two bugs the pre-measurement list caught.**
+
+1. **The fitted gain could not reach a run.** `build_runner` sets the encoder gain from
+   `encoder_gain_pa` unconditionally, so `--channels` ran the velocity channel at the
+   combined encoder's 26.0 — six times the fitted value — no matter what was calibrated.
+   Fixed with `CalibrationProfile.channel_gain_pa`, and the startup line now prints the gain
+   actually in use rather than the profile's.
+2. **The sweep triggered on the wrong population.** `DecoderParams` defaults to GF; this
+   dataset reads the takeoff from MOTOR, ~6 ms later. The first pass therefore fitted the
+   threshold at giant-fiber firing while every real run reports it at the muscle. Corrected,
+   and it narrowed the passing band from 5 settings of 9 to 2.
+
+**Two caveats that limit what this is worth.**
+
+* **Resolution.** Thresholds are quantised by the frame at which angular size is sampled:
+  the measured values step 36.6, 40.8, 43.2, 45.9. Those steps are 2-3 degrees against a
+  tolerance of +/- 3, so the band's edges are set as much by sampling as by the circuit.
+* **The fit is condition-specific, and the condition is the one normally run.** With
+  hemifield tuning on — `--retinotopy`, which scales drive by bearing — the same parameters
+  give 45.9 degrees, outside the band. Refitting with it on moves the answer to size gain
+  135 at velocity gain 4 (40.8 deg). Both are recorded; neither is adopted as the default,
+  because step 3 replaces the azimuth map and will invalidate any hemifield-on fit made now.
+
+**Scorecard effect.** Three rows move. The threshold row goes 16.7 -> 40.8 degrees against a
+published ~39; the LPLC2 lesion row goes from partial (16.7 -> 31.8, generic drive removed)
+to abolished, which is the published behaviour and something the single-channel model could
+not produce at any setting; and the mechanism row is no longer failing, because the two
+populations now carry different signals.
+
+
+### Step D, run: the size channel had no zero
+
+**Found by Ranuja, in the telemetry, not by any test we had.** The LC4 row was lit almost
+continuously and went *quiet* on approach — the reverse of the pre-split encoder's
+behaviour. Nothing in the scripted sweeps could see it, and both published targets were
+passing while it happened.
+
+**Cause.** A Gaussian in degrees never reaches zero. At theta = 0 the size channel still
+delivers 6.6% of peak — measured, 5.9 pA against the 7.0 pA a cell needs to fire, and the
+per-cell gain spread of +/- 22% puts a large share of the 185 LPLC2 cells over the line. The
+channel is above firing threshold for every theta between **1.3 and 82.7 degrees**. A 5 mm
+object subtends 1.3 degrees at 220 mm, wider than the arena, so there is nowhere the threat
+can sit that does not drive LPLC2. The upper edge is the other half of the report: past 83
+degrees the Gaussian falls back under threshold and the channel goes **silent at the
+strongest possible stimulus**.
+
+Measured on a near-stationary object over 1,501 frames:
+
+| size tuning | frames in which LPLC2 fired | takeoffs |
+|---|---|---|
+| Gaussian in degrees | **1,497 of 1,501 (100%)** | 0 |
+| Gaussian in log angle | **0 of 1,501 (0%)** | 0 |
+
+**Neither published target can see this.** Both describe what happens during an approach;
+a resting discharge that never triggers a takeoff is invisible to both. Two targets caught
+an under-determined fit and missed a mechanism error sitting underneath it. **A scorecard
+constrains what it names and nothing else** — which is an argument for watching the thing
+run, not only for adding targets.
+
+**The fix, and its status.** `size_tuning_form` selects a Gaussian in degrees or in log
+angular size. The log form has no floor and no upper cutoff. It also makes the published
+C4 = 0.52 usable *as published*: 0.52 cannot be a width in degrees, but it works as a
+dimensionless width in log-angle, which would explain why the value carries no unit.
+
+**That interpretation is ours and remains unverified.** The paper's equation is paywalled —
+Cell returns 403, PMC is behind a cookie wall, and the open papers citing it restate the
+model only in words. It is recorded as inferred, and both forms are kept so the choice can
+be revisited by whoever reads the equation.
+
+**Refit.** The log form passes both targets over velocity gain 4-5 at size gain 90-135, with
+the lesion bound looser than the linear form's (abolished up to gain 7, against 5). Adopted:
+velocity gain 4, size gain 110, width 0.52, threshold 40.8 degrees. The velocity gain is
+unchanged, so only one number moved.
+
+**What the two forms do NOT differ on:** both hit 39 +/- 3 degrees, and both abolish on the
+LPLC2 lesion. The fit did not choose between them. The resting discharge did.
+
+### Step E, run: the fit is accurate at one speed and fails at the rest
+
+Prompted by Ranuja's interactive run showing takeoffs spread from 24 to 70 degrees where the
+scripted fit says 40.8. The spread is expected — a hand-moved threat varies wildly in speed —
+but it was worth measuring what the calibrated model does across approach speeds, because
+nothing in Steps C or D varied speed at all. **Both targets were measured at a single 0.42
+m/s approach.**
+
+Giant fiber firing and takeoff, scripted, same connectome:
+
+| approach | combined encoder (gain 26) | split channels (log, fitted) |
+|---|---|---|
+| 0.42 m/s | GF 1182 ms, takeoff at 16.7 deg | GF 1277 ms, takeoff at **40.8 deg** |
+| 0.80 m/s | GF 608 ms, takeoff at 13.1 deg | GF 700 ms, **no takeoff** |
+| 1.50 m/s | GF 314 ms, takeoff at 11.3 deg | **GF never fires** |
+| 2.50 m/s | GF 177 ms, takeoff at 9.3 deg | **GF never fires** |
+
+**The split buys accuracy at one speed and loses the whole fast half of the range.** The
+combined encoder fires across all of it but at 9-17 degrees, failing the published threshold
+everywhere. Neither is right.
+
+**Diagnosed, not guessed.** Two separate failures:
+
+* At 0.80 m/s the giant fiber *does* fire, 45 ms before contact, and the takeoff never
+  happens. Setting `sensory_delay_ms` to 0 restores it (takeoff at 39.0 deg). It is the 19 ms
+  sensory delay spending the margin the animal needed.
+* At 1.50 m/s the giant fiber does not fire at all. Raising the velocity gain from 4 to 26
+  restores firing (38.4 deg); the size channel cannot carry it, because at that speed the
+  object crosses 42 degrees roughly 17 ms before contact and the 19 ms delay means the fly
+  never sees it.
+
+**The two constraints pull against each other, and that is the finding.** The LPLC2 lesion
+target requires the velocity channel to be *weak* — strong enough and silencing LPLC2 no
+longer abolishes the escape, which is how Step C bounded the gain at 5 to 7. But escaping a
+fast loom requires the velocity channel to be *strong*, because the size channel arrives too
+late. Our velocity channel cannot satisfy both, which is evidence that its **functional form
+is wrong**, not merely its gain: one linear term with one fitted constant is standing in for
+whatever Ache et al. fit with C1 = 0.0002567 and C2 = 1.7, neither of which we can place.
+
+**Caveat on the outcome column.** Above 0.62 m/s the predator outruns the fly's cruise speed,
+so "captured" is guaranteed by the arena whatever the neurons do. Only *whether the giant
+fiber fired* carries information at 1.5 and 2.5 m/s, which is why the table reports it.
+
+**What this says about the method.** Three targets were available and we used two, because
+the third — speed dependence — was already marked **pass** on the scorecard from a
+measurement of the *combined* encoder. A row that passes for one configuration was carried
+across to another without re-measuring. The scorecard has to say which encoder each row was
+measured on.
+
+### Step F, SUPERSEDED by Step G: fit against speed dependence as a third target
+
+> **Do not run this as written.** Two things changed before it started. (1) Its purpose was
+> to close the degeneracy between the two channel gains with a third target; Ache et al.
+> fixes their ratio outright, so that degeneracy is gone and only one scale remains to fit.
+> (2) **Its third criterion has the direction backwards** — it requires angular size at
+> firing to *decrease* with approach speed, and the published Figure 4B says it increases.
+> Kept unedited below because the error is the instructive part: the criterion was written
+> from the combined encoder's behaviour and from reading "faster looms trigger earlier" as
+> "fires at a smaller angle", and it would have scored correct behaviour as a failure. See
+> Step G, point 4.
+
+**Subgoal.** Fit the two channels so the model reproduces the published threshold, the LPLC2
+lesion, *and* the dependence on approach speed — across the range of speeds, rather than at
+the single 0.42 m/s both earlier fits used.
+
+**Why a third target rather than a better fit.** Step E showed the two existing targets pull
+the velocity gain in opposite directions: the lesion needs it weak, a fast loom needs it
+strong. A third relationship is what decides between them, and it is the one relationship we
+already know the model gets wrong. It also closes the degeneracy Step C left open — three
+targets against three parameters.
+
+**Done-criterion — one parameter set must satisfy all three:**
+
+1. Threshold at 0.42 m/s within **39 +/- 3 degrees**.
+2. Silencing LPLC2 **abolishes** the escape at that speed.
+3. The giant fiber **fires at every approach speed from 0.1 to 2.5 m/s**, and the angular
+   size at firing **decreases monotonically** with speed.
+
+(3) is deliberately qualitative. A quantitative curve would be better, but we cannot source
+one, and asserting a fitted curve we have not read would be inventing a target — the failure
+mode this whole scorecard exists to prevent. Monotonic decrease is weaker and falsifiable,
+which is the correct trade.
+
+**If no parameter set satisfies all three**, that is the result, and it says the velocity
+channel's functional form is wrong rather than its gain — which is already the suspicion,
+since one linear term with one fitted constant stands in for whatever Ache et al. fit with
+C1 = 0.0002567 and C2 = 1.7.
+
+**What could make the measurement lie**, written before measuring:
+
+* **The current metric goes blind exactly where the problem is.** `escape_angular_size_deg`
+  is measured at takeoff, and returns None when the giant fiber fires too late for a takeoff
+  to follow — which is precisely the 0.80 m/s case. A speed sweep using it would score
+  "reflex failed" and "takeoff suppressed" identically. **The sweep must measure angular size
+  at GF first spike**, and that field does not exist yet. Build it first.
+* **The arena decides the outcome above 0.62 m/s**, where the predator outruns the fly's
+  cruise speed and capture is guaranteed whatever the neurons do. Outcome carries no
+  information there; only GF firing does.
+* **Episode duration scales with approach speed.** A slow approach needs a longer episode
+  simply to arrive, and a fixed duration would read "no escape" for "ran out of time".
+* **Monotonicity across a coarse grid is nearly free.** Four points can look monotonic by
+  accident, and the thresholds are quantised by the sampling frame. Use enough speeds that a
+  non-monotonic result would be visible, and report the quantisation step alongside.
+* **Fitting three parameters to three targets can succeed and still mean nothing** if the
+  targets are not independent. The threshold and the speed dependence are both about when the
+  GF fires; if the fitted set turns out to sit at the edge of every band at once, suspect
+  that rather than celebrate it.
+
+**Dependency.** The Ache et al. 2019 equation would replace the velocity channel's invented
+form with the published one, turning three fitted parameters into roughly one. Worth doing
+first if the paper can be obtained; the step is runnable without it, at the cost of fitting a
+form we are not confident in.
+
+### Step G, run: the paper, and what it settles
+
+Ranuja supplied the Ache et al. 2019 PDF after every fetch route returned 403. Worth noting
+it is **CC BY open access** — it was never paywalled, only closed to an automated client.
+A human could have opened it at any point in the four attempts spent working around it.
+
+**1. The log-Gaussian is confirmed, exactly.** STAR Methods eq. 4:
+
+    V_LPLC2 = C2 * exp( -(ln[theta(t - d2)] - ln[C3])^2 / (2 * C4^2) )
+
+with C2 = 1.7 mV, C3 = 42 deg, C4 = 0.52, d2 = 0.019 s. A Gaussian in **ln theta**, which is
+why 0.52 carries no unit. Step D inferred this from two things — that 0.52 cannot be a width
+in degrees, and that a log Gaussian has no resting floor — and the inference was right. The
+form stops being ours and becomes the paper's.
+
+**2. The velocity channel is linear, as we had it.** Eq. 3: `V_LC4 = C1 * theta_dot(t - d1)`,
+a line through the origin, C1 = 0.0002567 mV per deg/s, d1 = 0.019 s. So C2 = 1.7 was never
+an exponent — it is the size channel's amplitude in millivolts. Step E's suspicion that the
+velocity channel's *form* was wrong is **not supported**; the form was right.
+
+**3. What the paper actually settles is the RATIO, which is what we could not fit.** With
+the published weights (eq. 7, W_LPLC2 = 1.45, W_LC4 = 1.62):
+
+    weighted size peak      = 1.45 * 1.7      = 2.465 mV
+    weighted velocity slope = 1.62 * 0.0002567 = 4.159e-4 mV per deg/s
+    the two are equal at 5,928 deg/s = 103.5 rad/s
+
+Our velocity channel is per rad/s, so `size_gain_pa / gain_pa` must be **103.5**. It was
+**27.5** — our velocity channel was **3.8x too strong relative to size**. The degeneracy
+Step C could not close, and Step F was written to attack with a third target, is closed by
+the paper instead. **Three fitted numbers become one**: an overall pA scale.
+
+Refitted at the locked ratio, sweeping only that scale: velocity gain **2.2**, size gain
+**227.7**, giving **38.6 degrees** against the published ~39, with the LPLC2 lesion still
+abolishing the escape. Both targets met with one free parameter rather than three.
+
+**4. I had the third criterion backwards.** Step F required angular size at firing to
+*decrease* with approach speed. Figure 4B says the opposite: a pure size (eta) encoder peaks
+at a fixed 42 degrees whatever the speed, a pure velocity (rho) encoder peaks at maximum
+size, and the real GF sits between — so as the velocity contribution grows with faster
+looms, the peak moves to **larger** angular size. Measured at the new fit:
+
+| approach | r/v | GF | theta at takeoff |
+|---|---|---|---|
+| 0.10 m/s | 100 ms | fires | 24.6 deg |
+| 0.20 m/s | 50 ms | fires | 30.9 deg |
+| 0.42 m/s | 24 ms | fires | 38.6 deg |
+| 0.60 m/s | 17 ms | fires | 48.6 deg |
+| 0.80 m/s | 12 ms | fires, no takeoff | -- |
+| 1.50 m/s | 6.7 ms | **never** | -- |
+
+Monotonically increasing, which is the published direction. I wrote the criterion from the
+*combined* encoder's behaviour and from the loose phrase "faster looms trigger earlier",
+conflating earlier *in time* with *smaller angular size*. Had the sweep run before the paper
+arrived, it would have scored a correct behaviour as a failure. Values below 42 at slow
+approaches are expected: our threshold crossing necessarily precedes the paper's response
+peak.
+
+**5. What remains broken is narrower than Step E claimed.** The failure above 0.8 m/s is
+real, but our arena at those speeds runs at r/v = 12.5, 6.7 and 4.0 ms, against the paper's
+fitted range of **10 to 80 ms**. At 1.5 and 2.5 m/s we are extrapolating outside the data
+the model was ever fitted to, so "the model fails there" is partly "we are using it outside
+its domain". The 0.80 m/s case is inside the range and does fail: the giant fiber fires and
+no takeoff follows, which Step E localised to the 19 ms delay rather than the encoder.
+
+**6. Components of the published model we do not have.** Eq. 7 sums four terms, and we
+implement two. The missing pair are both inhibitory: a tonic hyperpolarization that is a
+sigmoid in angular size (eq. 5, weight **2.27** — the largest weight in the model), and a
+small LC4-dependent Gaussian peaking at 26 degrees (eq. 6, weight 1). We supply inhibition
+from the connectome's own INH population instead, which is a different thing and not
+obviously equivalent. This is the most substantial known gap between our encoder and theirs.
+
+**7. Anatomy the paper confirms independently.** 55 LC4 and 108 LPLC2 synapse onto the GF,
+with 2,442 and 1,366 synapses — a ratio of 1.79, matching the scorecard row. "LPLC2 and LC4
+contribute 99.4% of the GF's direct-input synapses from the optic lobe", which supports the
+decision not to drive the other 654 visual cells. And LPLC2 synapses onto LC4 (>175
+synapses), the likely source of the supralinear summation.
+
+**8. The lesion target, quantified.** Short-mode takeoffs fell from 26% to 3% with TNT and
+17% to 7% with Kir. "Near-abolished" is the right reading, and our binary abolition is at
+the strong end of it.
 
 ### How a step is run
 

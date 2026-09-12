@@ -177,6 +177,40 @@ class LoomingEncoder(BaseSensoryEncoder):
                 return theta, theta_dot
         return self._history[0][1:]
 
+    def _size_drive_pa(self, theta_rad: float) -> float:
+        """LPLC2's angular-size channel, in picoamps.
+
+        Two candidate forms for the same published Gaussian, because the paper's equation
+        is paywalled and we have only the parameter values quoted secondhand:
+
+        * ``"linear"`` -- a Gaussian in degrees, width fitted. Its flaw is that a Gaussian
+          has no zero: at theta = 0 it still delivers 6.6% of peak, which measured out as
+          5.9 pA against the 7 pA a cell needs to fire. With the per-cell gain spread on
+          top, LPLC2 fires tonically for a threat anywhere in the arena -- and then falls
+          SILENT past 83 degrees, when the threat is closest. Both were visible in the
+          telemetry as a permanently lit LC4 row that went quiet on approach.
+        * ``"log"`` -- a Gaussian in log angular size. This is a hypothesis, not a reading:
+          the published C4 = 0.52 cannot be a width in degrees (a delta function at 42),
+          but it works as a dimensionless width in log-angle, which would explain why it
+          carries no unit. It goes to zero for a distant object and stays high up close.
+
+        The form is switchable so the two published targets decide between them rather
+        than our preference. Whichever is adopted, it stays labelled as inferred.
+        """
+        p = self._p
+        theta_deg = float(np.rad2deg(theta_rad))
+        if p.size_tuning_form == "log":
+            if theta_deg <= 0.0:
+                return 0.0
+            offset = np.log(theta_deg) - np.log(p.size_peak_deg)
+            width = p.size_log_width
+        else:
+            offset = theta_deg - p.size_peak_deg
+            width = p.size_width_deg
+        if width <= 0.0:
+            return 0.0
+        return float(p.size_gain_pa * np.exp(-(offset * offset) / (2.0 * width * width)))
+
     def describe_channels(self) -> str:
         return (f"  feature channels: {self._velocity_cells.size} LC4 on angular velocity, "
                 f"{self._size_cells.size} LPLC2 on angular size "
@@ -354,10 +388,7 @@ class LoomingEncoder(BaseSensoryEncoder):
             d_theta, d_theta_dot = self._delayed(float(obs.t), p.sensory_delay_ms)
 
             velocity_pa = p.gain_pa * max(d_theta_dot, 0.0)
-            offset = np.rad2deg(d_theta) - p.size_peak_deg
-            size_pa = p.size_gain_pa * float(
-                np.exp(-(offset * offset) / (2.0 * p.size_width_deg ** 2))
-            )
+            size_pa = self._size_drive_pa(d_theta)
 
             gains = self._gains
             # Only the two measured populations are driven. The remaining visual
@@ -386,10 +417,9 @@ class LoomingEncoder(BaseSensoryEncoder):
                 "drive_pa": float(injected.mean()),
                 "drive_pa_max": float(injected.max()),
                 "size_drive_pa": (
-                    float(p.size_gain_pa * np.exp(
-                        -((np.rad2deg(self._delayed(float(obs.t), p.sensory_delay_ms)[0])
-                           - p.size_peak_deg) ** 2) / (2.0 * p.size_width_deg ** 2)))
-                    if p.split_feature_channels else 0.0
+                    self._size_drive_pa(
+                        self._delayed(float(obs.t), p.sensory_delay_ms)[0]
+                    ) if p.split_feature_channels else 0.0
                 ),
                 "closing_ms": closing,
                 "closing_raw_ms": float(obs.closing_speed),

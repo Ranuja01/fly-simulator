@@ -77,6 +77,28 @@ class CalibrationProfile:
     measured or assumed.
     """
 
+    channel_gain_pa: float | None = None
+    """Velocity-channel gain when the two feature channels are split (``--channels``).
+
+    The combined encoder drives every visual projection cell with one expansion-rate
+    signal; the split encoder drives LC4 with velocity alone and hands angular size to
+    LPLC2. Those are different signals reaching different cells, so they cannot share a
+    gain -- and until this field existed they did, because ``build_runner`` sets the gain
+    from ``encoder_gain_pa`` unconditionally. The fitted velocity gain never reached the
+    simulation, and ``--channels`` silently ran at the combined encoder's 26.0.
+
+    ``None`` means the profile has no separate fit and the combined gain is used.
+    """
+
+    channel_threshold_deg: float | None = None
+    """Escape threshold measured with the feature channels split.
+
+    Separate from ``escape_threshold_deg`` because the two encoders are fitted to different
+    targets: the combined one to consistency across datasets, the split one to the published
+    ~39 degrees. Reporting the combined figure during a ``--channels`` run would describe a
+    fit the run is not using.
+    """
+
     escape_threshold_deg: float | None = None
     """The angular size at which this profile was fitted to trigger an escape.
 
@@ -132,6 +154,8 @@ PROFILES: dict[str, CalibrationProfile] = {
         pa_per_synapse=0.002,
         uses_population_overrides=False,
         decoder_population="MOTOR",
+        channel_gain_pa=2.2,
+        channel_threshold_deg=38.6,
         escape_threshold_deg=16.7,
         notes=(
             "male-cns:v1.0, male brain and ventral nerve cord. Fitted independently of "
@@ -149,14 +173,25 @@ def for_connectome(name: str) -> CalibrationProfile:
     return PROFILES.get(name, PROFILES["mock12"])
 
 
-def describe(profile: CalibrationProfile) -> str:
-    """One line for startup logging."""
+def describe(profile: CalibrationProfile, gain_pa: float | None = None) -> str:
+    """One line for startup logging.
+
+    ``gain_pa`` is the gain the run will ACTUALLY use, which differs from the profile's
+    when the feature channels are split. Reporting the profile value there would print a
+    number the simulation is not using -- the same mislabel that invalidated an earlier
+    sweep -- so the caller passes the effective one.
+    """
     parts = [f"calibration '{profile.name}'"]
     if profile.pa_per_synapse is not None:
         parts.append(f"{profile.pa_per_synapse} pA/synapse")
-    parts.append(f"gain {profile.encoder_gain_pa} pA")
+    effective = profile.encoder_gain_pa if gain_pa is None else gain_pa
+    split = (profile.channel_gain_pa is not None
+             and gain_pa == profile.channel_gain_pa)
+    parts.append(f"gain {effective} pA" + (" (split channels)" if split else ""))
     parts.append(f"tau_m {profile.neuron.tau_m_ms} ms")
     parts.append(f"takeoff read from {profile.decoder_population}")
-    if profile.escape_threshold_deg is not None:
-        parts.append(f"fitted to escape at ~{profile.escape_threshold_deg:.0f} deg")
+    threshold = (profile.channel_threshold_deg if split and profile.channel_threshold_deg
+                 else profile.escape_threshold_deg)
+    if threshold is not None:
+        parts.append(f"fitted to escape at ~{threshold:.0f} deg")
     return "  " + "  |  ".join(parts)

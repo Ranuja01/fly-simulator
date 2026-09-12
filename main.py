@@ -76,13 +76,22 @@ def build_runner(
     # The profile owns the encoder gain, and used to overwrite a caller's value in
     # silence -- which invalidated a whole sweep before it was noticed, every run
     # quietly using 26.0 while reporting the swept value. Say so instead.
+    #
+    # The split encoder needs its own gain. It drives LC4 with angular velocity alone
+    # while LPLC2 carries size, so the number that suits one composite signal does not
+    # suit either half -- with --channels on the combined 26.0, the velocity channel
+    # fired far below the published threshold. Fitted separately in
+    # tools/calibrate_channels.py against the threshold AND the LPLC2 lesion.
+    profile_gain = profile.encoder_gain_pa
+    if channels and profile.channel_gain_pa is not None:
+        profile_gain = profile.channel_gain_pa
     if config.encoder.gain_pa != EncoderParams().gain_pa and (
-            config.encoder.gain_pa != profile.encoder_gain_pa):
+            config.encoder.gain_pa != profile_gain):
         print(f"  note: encoder gain {config.encoder.gain_pa} replaced by calibration "
-              f"profile value {profile.encoder_gain_pa}")
-    config = config.with_overrides(encoder={"gain_pa": profile.encoder_gain_pa})
+              f"profile value {profile_gain}")
+    config = config.with_overrides(encoder={"gain_pa": profile_gain})
     neuron_params = profile.neuron
-    print(calibration.describe(profile))
+    print(calibration.describe(profile, profile_gain))
 
     brain = LIFBrain(
         connectome,

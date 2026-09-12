@@ -288,17 +288,58 @@ class EncoderParams:
     """Angular size at which the LPLC2 size channel peaks. Published: C3 = 42 degrees."""
 
     size_width_deg: float = 18.0
-    """Width of that Gaussian. **FITTED, not measured.**
+    """Width of the size Gaussian in DEGREES. Used only by ``size_tuning_form="linear"``.
 
-    The paper reports C4 = 0.52, but the functional form was not available to us and 0.52
-    cannot be a standard deviation in degrees -- a Gaussian centred at 42 with sigma 0.52
-    would be a delta function, inconsistent with a fit across a whole looming time course.
-    It is plausibly a fractional width (0.52 x 42 ~ 22 degrees) or a width in log-angle,
-    and we do not know which. This is therefore one free parameter fitted against one
-    published target, the 39 degree threshold, and must be read as such."""
+    Fitted, never measured, and now superseded: the published Gaussian is in log-angle with
+    width C4 = 0.52 (see `size_log_width`), so this parameter belongs to the alternative
+    form kept for comparison rather than to the model as run. It is the value the linear
+    form was fitted to under two published targets, and 18 was the only width that passed
+    across that sweep -- see MODEL_JOURNAL.md Steps C and D.
+    """
 
-    size_gain_pa: float = 90.0
-    """Picoamps at the peak of the size channel. Fitted, as `gain_pa` is."""
+    size_gain_pa: float = 227.7
+    """Picoamps at the peak of the size channel.
+
+    **No longer independently fitted.** Ache et al. 2019 fixes the RATIO of the two
+    channels, which this model previously treated as two free numbers. From eqs. 3, 4 and 7
+    with the published weights (W_LPLC2 = 1.45, W_LC4 = 1.62):
+
+        weighted size peak      = 1.45 * C2 = 2.465 mV
+        weighted velocity slope = 1.62 * C1 = 4.159e-4 mV per deg/s
+
+    so the velocity term equals the size peak at 5,928 deg/s = 103.5 rad/s. Our velocity
+    channel is per rad/s, so **`size_gain_pa` must equal `channel_gain_pa` x 103.5** if the
+    two channels are to stand in the published proportion. At the previous 4 and 110 the
+    ratio was 27.5 -- our velocity channel was 3.8x too strong relative to size.
+
+    That leaves ONE free number, the overall pA scale, instead of three. It is fitted to the
+    published threshold: velocity gain 2.2 with this value gives 38.6 degrees. Keep the two
+    in proportion when changing either, or the published relationship is silently discarded.
+    """
+
+    size_tuning_form: str = "log"
+    """Functional form of the LPLC2 size channel: ``"linear"`` or ``"log"``.
+
+    ``"log"`` is the published form (Ache et al. 2019 eq. 4, see `size_log_width`). The
+    ``"linear"`` alternative -- a Gaussian in degrees -- is kept only because it was what
+    this model used first, and because the comparison is instructive: a Gaussian in degrees
+    never reaches zero, so it delivered 5.9 pA at zero angular size against the 7 pA a cell
+    needs to fire. LPLC2 fired in 100% of frames with nothing approaching, and went silent
+    past 83 degrees. Found by Ranuja in the telemetry, before the equation was available.
+    """
+
+    size_log_width: float = 0.52
+    """Width of the log-angle Gaussian, in natural-log units. Published: C4 = 0.52.
+
+    **Confirmed from the paper.** Ache et al. 2019, STAR Methods eq. 4:
+
+        V_LPLC2 = C2 * exp( -(ln[theta(t - d2)] - ln[C3])^2 / (2 * C4^2) )
+
+    with C2 = 1.7 mV, C3 = 42 deg, C4 = 0.52, d2 = 0.019 s. The Gaussian is in **ln theta**,
+    which is why 0.52 carries no unit -- it is a width in log-angle. This was inferred here
+    before the paper could be read, from the fact that 0.52 cannot be a width in degrees and
+    that a log Gaussian has no resting floor; the equation confirms it exactly.
+    """
 
     sensory_delay_ms: float = 19.0
     """Stimulus-to-giant-fiber delay. Published: d1 = d2 = 0.019 s.
