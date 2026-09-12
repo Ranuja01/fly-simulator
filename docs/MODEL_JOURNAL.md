@@ -207,12 +207,35 @@ dead, and the one pathway that mattered was then propped up by hand: GF->TTMn at
 twenty-seven thousand times the uniform value. The model behaves like a twelve-neuron
 circuit because that is what it is; the rest cannot fire by construction.
 
-**The fix is to stop the two constants doing each other's jobs.** Set `pa_per_synapse` from
-physiology so cells fire from their measured convergence, and control the escape threshold
-with `encoder.gain_pa`, which is the knob that actually means "how strongly does looming
-drive LC4". At 0.007 a postural neuron reaches 311% of threshold, so the propagation
-problem may substantially dissolve; the escape would then fire far too early and the
-encoder gain comes down to compensate. Untested as yet.
+**That fix was predicted, tested, and failed.** The prediction was that raising
+`pa_per_synapse` to a physiological value would let cells fire from their measured
+convergence and largely dissolve the problem. Sustained 100 pA into every LC4 cell, 240 ms,
+counting distinct cells that spiked:
+
+| pA/synapse | cells fired | `POSTURE` | `PMN` of 14,275 | `DN` of 268 |
+|---|---|---|---|---|
+| 0.002 | ~1,003 | 0 | 5 | 14 |
+| 0.007 | 1,108 | 0 | 49 | 29 |
+| 0.020 | 1,281 | 0 | 116 | 55 |
+| 0.050 | 1,684 | **6** | 269 | 81 |
+
+Twenty-five times the synaptic strength buys 68% more active cells and six leg muscles of
+137. The network does not become epileptic either — it stays almost exactly as dead.
+
+The arithmetic above assumed *every* input firing at once. In reality a handful of
+presynaptic cells are active, so the effective input is a small fraction of 3,108 synapses
+however strong each one is. Multiplying a near-zero active fraction by a larger constant is
+still near zero.
+
+**So the corrected diagnosis is not calibration.** These cells are not silent because their
+synapses are weak. They are silent because **they are not downstream of what we stimulate.**
+The optic-lobe-to-escape pathway is a narrow chain. The premotor pool that drives the legs
+is driven in a real animal by proprioception, by other descending pathways and by central
+pattern generators, none of which this model supplies. It is "neurons present, input absent"
+again, at the scale of the whole nerve cord.
+
+Which means the leg muscles were never going to fire from a looming stimulus alone — nor,
+arguably, would a real fly's, with its legs reporting nothing back.
 
 ## 3. Decisions
 
