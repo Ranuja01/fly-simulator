@@ -266,6 +266,48 @@ class MotionParams:
 class EncoderParams:
     """Looming (visual expansion) encoder parameters."""
 
+    split_feature_channels: bool = False
+    """Drive LC4 and LPLC2 as the two different feature detectors they are.
+
+    Ache et al. 2019 measured that these populations do NOT compute the same thing:
+    **LPLC2 encodes angular SIZE, LC4 encodes looming SPEED**, and the giant fiber's
+    response is a linear function of angular velocity from LC4 plus a Gaussian function of
+    angular size from LPLC2. Driving both with one expansion-rate signal, as this encoder
+    did, collapses two measured channels into one.
+
+    It also explains two scorecard failures at once. Our escape fired at 16.7 degrees
+    against a published GF-mediated takeoff threshold of ~39 (von Reyn et al. 2014); a
+    Gaussian centred on 42 degrees is exactly what holds a fly back until the object is
+    large, and without it a monotonically rising velocity signal fires as soon as it can.
+    And silencing LPLC2 is published to remove the size component while leaving velocity —
+    which a model with no size component cannot reproduce.
+
+    Off by default so the two conditions stay comparable."""
+
+    size_peak_deg: float = 42.0
+    """Angular size at which the LPLC2 size channel peaks. Published: C3 = 42 degrees."""
+
+    size_width_deg: float = 18.0
+    """Width of that Gaussian. **FITTED, not measured.**
+
+    The paper reports C4 = 0.52, but the functional form was not available to us and 0.52
+    cannot be a standard deviation in degrees -- a Gaussian centred at 42 with sigma 0.52
+    would be a delta function, inconsistent with a fit across a whole looming time course.
+    It is plausibly a fractional width (0.52 x 42 ~ 22 degrees) or a width in log-angle,
+    and we do not know which. This is therefore one free parameter fitted against one
+    published target, the 39 degree threshold, and must be read as such."""
+
+    size_gain_pa: float = 90.0
+    """Picoamps at the peak of the size channel. Fitted, as `gain_pa` is."""
+
+    sensory_delay_ms: float = 19.0
+    """Stimulus-to-giant-fiber delay. Published: d1 = d2 = 0.019 s.
+
+    Covers phototransduction and optic-lobe processing, which this model bypasses by
+    injecting current directly into LC4 and LPLC2. Without it the fly reacts to the present
+    instant rather than to a 19 ms old image, which makes it respond earlier than the animal
+    and is part of why the threshold sat at 16.7 degrees."""
+
     hemifield_tuning: float = 0.0
     """How strongly looming drive is tuned to the eye that can see it, 0 to 1.
 

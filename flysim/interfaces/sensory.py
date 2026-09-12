@@ -101,6 +101,7 @@ class LoomingEncoder(BaseSensoryEncoder):
         n_neurons: int,
         hemisphere: np.ndarray | None = None,
         preferred_azimuth: np.ndarray | None = None,
+        labels: Sequence[str] | None = None,
     ) -> None:
         self._p = params
         self._n = int(n_neurons)
@@ -129,13 +130,58 @@ class LoomingEncoder(BaseSensoryEncoder):
         # A receptive field can be weakly driven but not negatively driven.
         self._gains = np.clip(gains, 0.05, None).astype(np.float32)
 
+        self._split_targets(labels if labels is not None
+                            else [""] * (int(np.max(self._target)) + 1))
         self.reset()
 
     def reset(self) -> None:
         self._reference = None
+        self._history: list[tuple[float, float, float]] = []
         self._prev_theta: float | None = None
         self._prev_t: float | None = None
         self._theta_dot: float = 0.0
+
+    def _split_targets(self, labels) -> None:
+        """Sort the driven cells into the two measured feature channels.
+
+        Ache et al. 2019: LC4 encodes looming speed, LPLC2 encodes angular size. Other
+        visual projection neurons in this population are not covered by that result and
+        keep the combined drive, because we have no measurement telling us otherwise.
+        """
+        velocity, size, other = [], [], []
+        for index in self._target:
+            name = str(labels[int(index)]).split(":", 1)[0].upper()
+            if name.startswith("LPLC2"):
+                size.append(int(index))
+            elif name.startswith("LC4"):
+                velocity.append(int(index))
+            else:
+                other.append(int(index))
+        self._velocity_cells = np.asarray(velocity, dtype=np.int64)
+        self._size_cells = np.asarray(size, dtype=np.int64)
+        self._other_cells = np.asarray(other, dtype=np.int64)
+
+    def _delayed(self, now_s: float, delay_ms: float):
+        """The (theta, theta_dot) the fly is actually reacting to.
+
+        A real fly's giant fiber sees a 19 ms old image: phototransduction and the optic
+        lobe take that long, and this model injects current straight into LC4 and LPLC2,
+        skipping both. Indexed by timestamp rather than frame count so it is correct
+        whatever the environment's step size is.
+        """
+        target = now_s - delay_ms / 1000.0
+        if not self._history or target <= self._history[0][0]:
+            return self._history[0][1:] if self._history else (0.0, 0.0)
+        for t, theta, theta_dot in reversed(self._history):
+            if t <= target:
+                return theta, theta_dot
+        return self._history[0][1:]
+
+    def describe_channels(self) -> str:
+        return (f"  feature channels: {self._velocity_cells.size} LC4 on angular velocity, "
+                f"{self._size_cells.size} LPLC2 on angular size "
+                f"(peak {self._p.size_peak_deg:.0f} deg), "
+                f"{self._other_cells.size} other visual cells unchanged")
 
     def _hemifield_weights(self, obs: EnvObservation) -> np.ndarray:
         """Per-target-cell gain from which eye can see the threat.
@@ -293,9 +339,39 @@ class LoomingEncoder(BaseSensoryEncoder):
         tuning = self._hemifield_weights(obs)
 
         currents = np.zeros(self._n, dtype=np.float32)
-        currents[self._target] = _soft_saturate(
-            np.maximum(raw_drive_pa * self._gains * tuning, 0.0), p.max_current_pa
-        )
+        if not p.split_feature_channels:
+            currents[self._target] = _soft_saturate(
+                np.maximum(raw_drive_pa * self._gains * tuning, 0.0), p.max_current_pa
+            )
+        else:
+            # Two measured channels instead of one invented composite. The velocity
+            # channel is theta_dot ALONE -- the exp(-alpha*theta) decay that used to sit
+            # on it was a crude stand-in for size dependence, and LPLC2 now supplies that
+            # properly rather than by suppressing the velocity signal.
+            self._history.append((float(obs.t), theta, self._theta_dot))
+            if len(self._history) > 4096:
+                del self._history[:2048]
+            d_theta, d_theta_dot = self._delayed(float(obs.t), p.sensory_delay_ms)
+
+            velocity_pa = p.gain_pa * max(d_theta_dot, 0.0)
+            offset = np.rad2deg(d_theta) - p.size_peak_deg
+            size_pa = p.size_gain_pa * float(
+                np.exp(-(offset * offset) / (2.0 * p.size_width_deg ** 2))
+            )
+
+            gains = self._gains
+            # Only the two measured populations are driven. The remaining visual
+            # projection cells compute other features; driving them with a looming signal
+            # was our assumption, not a measurement, and with 654 of them against 312
+            # measured cells that assumption dominated the result.
+            for cells, drive in ((self._velocity_cells, velocity_pa),
+                                 (self._size_cells, size_pa)):
+                if not cells.size:
+                    continue
+                sel = np.isin(self._target, cells)
+                currents[cells] = _soft_saturate(
+                    np.maximum(drive * gains[sel] * tuning[sel], 0.0), p.max_current_pa
+                )
 
         injected = currents[self._target]
         left = self._hemisphere is not None and np.any(
@@ -309,6 +385,12 @@ class LoomingEncoder(BaseSensoryEncoder):
                 "theta_dot_smoothed": self._theta_dot,
                 "drive_pa": float(injected.mean()),
                 "drive_pa_max": float(injected.max()),
+                "size_drive_pa": (
+                    float(p.size_gain_pa * np.exp(
+                        -((np.rad2deg(self._delayed(float(obs.t), p.sensory_delay_ms)[0])
+                           - p.size_peak_deg) ** 2) / (2.0 * p.size_width_deg ** 2)))
+                    if p.split_feature_channels else 0.0
+                ),
                 "closing_ms": closing,
                 "closing_raw_ms": float(obs.closing_speed),
                 "distance_m": distance,

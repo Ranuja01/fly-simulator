@@ -26,7 +26,7 @@ import numpy as np
 from flysim.brain.builders import build, build_benchmark
 from flysim.brain.lif import LIFBrain
 from flysim import calibration
-from flysim.config import SimConfig
+from flysim.config import EncoderParams, SimConfig
 from flysim.core.base import BaseSensoryEncoder
 from flysim.envs.interactive2d import InteractiveEnvironment
 from flysim.envs.predator2d import Predator2DEnvironment
@@ -57,6 +57,7 @@ def build_runner(
     interactive: bool = False,
     motion: bool = False,
     retinotopy: bool = False,
+    channels: bool = False,
 ) -> SimulationRunner:
     """Assemble the four layers into a runnable simulation.
 
@@ -72,6 +73,13 @@ def build_runner(
         kwargs.setdefault("pa_per_synapse", profile.pa_per_synapse)
 
     connectome = build(config.connectome, seed=config.seed, **kwargs)
+    # The profile owns the encoder gain, and used to overwrite a caller's value in
+    # silence -- which invalidated a whole sweep before it was noticed, every run
+    # quietly using 26.0 while reporting the swept value. Say so instead.
+    if config.encoder.gain_pa != EncoderParams().gain_pa and (
+            config.encoder.gain_pa != profile.encoder_gain_pa):
+        print(f"  note: encoder gain {config.encoder.gain_pa} replaced by calibration "
+              f"profile value {profile.encoder_gain_pa}")
     config = config.with_overrides(encoder={"gain_pa": profile.encoder_gain_pa})
     neuron_params = profile.neuron
     print(calibration.describe(profile))
@@ -95,11 +103,18 @@ def build_runner(
     )
     if retinotopy:
         config = config.with_overrides(encoder={"hemifield_tuning": 1.0})
+    if channels:
+        # LC4 on looming speed, LPLC2 on angular size -- the two measured feature
+        # channels, rather than one composite driving both (Ache et al. 2019).
+        config = config.with_overrides(encoder={"split_feature_channels": True})
     encoder: BaseSensoryEncoder = LoomingEncoder(
         config.encoder, brain.populations, brain.size,
         hemisphere=getattr(connectome, "hemisphere", None),
         preferred_azimuth=getattr(connectome, "preferred_azimuth", None),
+        labels=connectome.labels,
     )
+    if config.encoder.split_feature_channels:
+        print(encoder.describe_channels())
     if retinotopy:
         h = getattr(connectome, "hemisphere", None)
         if h is None:
@@ -324,6 +339,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--postural", action="store_true",
                         help="Include the leg motor pool that aims the jump, not just the "
                              "escape reflex that fires it. Larger and slower.")
+    parser.add_argument("--channels", action="store_true",
+                        help="Drive LC4 on looming speed and LPLC2 on angular "
+                             "size, as measured, instead of one signal for both.")
     parser.add_argument("--retinotopy", action="store_true",
                         help="Tune looming drive to the eye that can see the threat, so "
                              "direction reaches the neurons instead of being discarded.")
@@ -450,6 +468,7 @@ def main(argv: list[str] | None = None) -> int:
         interactive=args.interactive,
         motion=args.motion,
         retinotopy=args.retinotopy,
+        channels=args.channels,
     )
     print(runner.brain.connectome.summary())
 
