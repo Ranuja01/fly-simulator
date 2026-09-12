@@ -14,6 +14,59 @@ argued with rather than taken on trust.
 
 ---
 
+## 0. The target, and how we know when a step is done
+
+Added after a session in which the work wandered from the escape reflex into walking,
+proprioception, body models and jump aiming — none of them in scope — because **there was
+no definition of done**. Every measurement opened a direction, and with nothing to check a
+direction against, each looked as reasonable as the last.
+
+### The scope
+
+**Sight-based predator escape, recreated faithfully.** Not a whole fly. Once this is done
+it becomes the template for a second modality.
+
+### What "faithfully" means
+
+Real escape has published, measurable properties. The model is faithful to the degree it
+reproduces them. Sourcing is marked, because several values come from another group's
+write-up rather than from primary literature we have read.
+
+| measured fact | source | model | status |
+|---|---|---|---|
+| LC4+LPLC2 is ~30% of giant-fiber input | independently verified, 29.85% theirs / 31.3% ours | 31.3% | **pass** |
+| one GF spike, one takeoff, all-or-none | established | holds | **pass** |
+| faster looms trigger earlier | established | 37 -> 115 mm across 0.1 -> 2 m/s | **pass** |
+| silencing LC4 *and* LPLC2 abolishes the escape | established | no takeoff, fly captured | **pass** |
+| silencing LPLC2 nearly abolishes it | established | degrades 16.7 -> 31.8 deg only | **partial** |
+| TTM fires 0.93 ms after the giant fiber | their page, cited as measured | 5.7 ms | **fail, 6x** |
+| DLM fires 1.44 ms after the giant fiber | their page, cited as measured | ~12 ms | **fail, 8x** |
+| short takeoff completes under 6.87 ms | their page | not measured | **unknown** |
+| escape triggers near a characteristic angular size | values vary by study and by whether theta or theta-dot is meant | 16.7 deg | **unverified** |
+| escape direction is away from the threat | established | scripted geometry | **not neural** |
+| direction is set by pre-takeoff leg posture | established | absent, and out of reach | **out of scope** |
+
+Anything not on this list needs an argument before it is worked on. The propagation problem,
+the ventral nerve cord, the aiming circuit and a physics body are all off it.
+
+### How a step is run
+
+Before starting, write down three things:
+
+1. **The subgoal**, in one sentence.
+2. **The done-criterion** — a number or a comparison that can fail.
+3. **What could make the measurement lie**, listed before the measurement is taken. Today's
+   errors were all cases where this list was written afterwards, or not at all.
+
+Then do the work, then check the criterion. If the criterion cannot be stated, the step is
+not ready to start.
+
+### How this project is built
+
+Ground up, in small steps, each understood before the next. Not by delegating to agents and
+accepting output — an external audit is a check on our work, not a substitute for it. The
+value here is the documented understanding, not the volume of code.
+
 ## 1. The rule
 
 **Measured beats invented, and invention must be labelled.**
