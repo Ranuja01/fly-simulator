@@ -42,12 +42,47 @@ write-up rather than from primary literature we have read.
 | TTM fires 0.93 ms after the giant fiber | their page, cited as measured | 5.7 ms | **fail, 6x** |
 | DLM fires 1.44 ms after the giant fiber | their page, cited as measured | ~12 ms | **fail, 8x** |
 | short takeoff completes under 6.87 ms | their page | not measured | **unknown** |
-| escape triggers near a characteristic angular size | values vary by study and by whether theta or theta-dot is meant | 16.7 deg | **unverified** |
+| GF-mediated takeoff threshold ~39 deg angular size | von Reyn et al. 2014 | 16.7 deg | **fail, 2.3x early** |
+| GF response peaks at 42 deg angular size | Ache et al. 2019 | no size channel exists | **fail** |
+| **LC4 encodes looming SPEED; LPLC2 encodes angular SIZE** | Ache et al. 2019 | both driven identically | **fail — mechanism** |
+| LC4:LPLC2 synapse ratio onto GF | 1.79 (Ache et al.) | 1.32 | **consistent** |
 | escape direction is away from the threat | established | scripted geometry | **not neural** |
 | direction is set by pre-takeoff leg posture | established | absent, and out of reach | **out of scope** |
 
 Anything not on this list needs an argument before it is worked on. The propagation problem,
 the ventral nerve cord, the aiming circuit and a physics body are all off it.
+
+### Step B, run: verify the angular threshold
+
+**Subgoal:** establish what our 16.7 deg actually is, find the corresponding published
+quantity, and confirm the match or record the discrepancy.
+
+**Result: failed, and the failure is informative.** Our figure is the angular size at
+takeoff dispatch. The published quantity is the GF-mediated takeoff threshold, **~39 deg**
+(von Reyn et al. 2014), with the GF response peaking at **42 deg** (Ache et al. 2019). Our
+fly escapes at less than half the angular size a real one does.
+
+**The mechanism error matters more than the number.** From Ache et al. 2019: *"LPLC2 input
+to the giant fiber encodes the angular size of an approaching object, whereas LC4 input
+directly encodes looming speed."* The GF response is modelled there as a linear function of
+angular velocity from LC4 **plus a Gaussian function of angular size from LPLC2**, peaking
+near 42 deg.
+
+We drive both populations identically, with one expansion-rate signal. **We have been
+treating two different feature detectors as one, and we have no size channel at all.**
+
+That also explains the partial lesion result. Silencing LPLC2 is published to remove the
+*size* component and leave velocity intact. Our model has no size component, so silencing
+LPLC2 merely removes generic drive — degrading the threshold from 16.7 to 31.8 deg rather
+than deleting a feature.
+
+Anatomy is consistent across datasets: LC4:LPLC2 synapses onto the giant fiber are 1.32 here
+against 1.79 in Ache et al., both with LC4 contributing more synapses from fewer cells.
+
+**Sourcing caveat:** these values come from search results quoting the papers, not from the
+papers read in full. The two independent figures agreeing (39 and 42 deg) and the anatomy
+matching give reasonable confidence, but a primary read should confirm the Gaussian's width
+before it is implemented.
 
 ### How a step is run
 
