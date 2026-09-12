@@ -237,6 +237,54 @@ again, at the scale of the whole nerve cord.
 Which means the leg muscles were never going to fire from a looming stimulus alone — nor,
 arguably, would a real fly's, with its legs reporting nothing back.
 
+## 2c. Status by evidence, not by intent
+
+Sorted by how much would have to be wrong for the claim to fail.
+
+### Works, and is tested
+
+| capability | evidence |
+|---|---|
+| escape timing and threshold | ~16.7 deg on neuprint, per-dataset profiles, `--check` on four connectomes |
+| speed discrimination | detection distance rises 37 -> 61 -> 91 -> 115 mm across 0.1 -> 2 m/s; 0.05 m/s never fires |
+| **left/right direction** | TTMn flips +70 vs -213 ms; **destroyed by the type-preserving shuffle**; field map spatially coherent (one eye lit, other at zero) |
+| flight versus bare hop | read at DLMn; silencing PSI gives 21.5 cm against 50.0 cm and repeated short hops |
+| efference copy | zero self-driven redirects after the fix, against two before, with the threat held at 0.0016 m/s |
+| architecture and gates | four connectomes interchangeable behind one `Connectome`; `--check` catches commanded-but-unperformed takeoffs |
+
+Of these, left/right is the strongest: it is the only claim verified three independent ways,
+including a null that destroys it.
+
+### Works partially, or is not readable where it matters
+
+| capability | what is true | what is missing |
+|---|---|---|
+| front/rear | +128 ms at DNp04, five seeds, ±4 ms | DNp04 has **zero** synapses onto TTMn, so it never reaches muscle |
+| retinotopic map | derived from anatomy, spatially coherent, sub-regions per bearing | **polarity unresolved** — we cannot say which end is front |
+| motion channel (T4/T5) | 24,700 spikes on an orbit where looming gives 0; recruits lobula-plate inhibition | no behavioural readout; the fly sees an orbit and does nothing |
+| premotor pool | fires under interactive drive (348 substeps) | 5 cells of 14,275 |
+
+### Not working
+
+| capability | why |
+|---|---|
+| aiming the jump | `POSTURE` records 0 spikes in every run; needs proprioception, which needs a body |
+| escape heading | geometric; the neural signal exists and nothing reads it |
+| in-flight steering | geometric |
+| walking, turning, landing | scripted kinematics, no neural basis at all |
+| optomotor turning | motion is seen, never acted on |
+| non-visual senses | **395 proprioceptors present and undriven**, 0 photoreceptors in the network |
+| learning | no plasticity in the engine |
+| neuromodulation | 926 edges dropped; LIF cannot represent slow modulation |
+| spontaneity | a LIF cell with no input sits at rest forever |
+
+### What this is, honestly
+
+One reflex, driven by measured wiring at its decision point, with scripted motor
+consequences — plus an unusually complete account of which parts are which. The
+contribution is not scale. It is that every claim above has a number attached, a null where
+one is possible, and a record of the times the number was wrong.
+
 ## 3. Decisions
 
 ### 3.1 Representation
