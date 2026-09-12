@@ -286,6 +286,45 @@ bearing-dependent for the same reason.
 warm-up exists in the scratch probes for precisely this reason — and then not carried into
 the tools written afterwards. The lesson in §6b is the right one and it was not applied.
 
+## 2b0. A generic filter was deleting a declared pathway
+
+Found by following up the audit's observation that `powered` looked like a laterality
+readout. Measured by silencing each Giant Fiber in turn, on the scripted environment:
+
+| | takeoffs | powered | FLIGHT substeps |
+|---|---|---|---|
+| intact | 1 | True | 5 |
+| **left** GF silenced | 5 | **False x5** | **0** |
+| right GF silenced | 1 | True | 5 |
+
+`powered` depended entirely on the *left* Giant Fiber; silencing the right one changed
+nothing. So "flight versus hop is read at the muscle" had quietly become "did the left GF
+fire", and with hemifield tuning on a right-side threat could report an escape as a hop for
+reasons unrelated to wings.
+
+**The cause was our own weight floor.** Queried unfiltered, DNp01 -> PSI has four edges:
+
+    DNp01_L -> PSI_L   9 synapses   kept
+    DNp01_R -> PSI_L   3 synapses   discarded by min_synapses = 5
+    DNp01_R -> PSI_R   2 synapses   discarded
+    DNp01_L -> PSI_R   2 synapses   discarded
+
+The pathway is fully bilateral in the reconstruction. A generic threshold kept the strongest
+edge and deleted the rest, making the wing pathway unilateral. No anatomy was missing and
+none needed inserting — the data was there and we filtered it out.
+
+Connections named in `ELECTRICAL_SYNAPSES` and `SUPRATHRESHOLD_SYNAPSES` are now exempt from
+the floor, on the same justification as the tables themselves: a pathway declared
+load-bearing should not be removed by a rule that knows nothing about it. Three edges added;
+the cache key carries an `r` so an older cache cannot be reused silently. Afterwards either
+Giant Fiber engages the wings, wing activity triples, and the spurious hop-then-rejump loop
+disappears. Only this one pair was affected — the other declared connections were all above
+the floor.
+
+**Generalisable:** a filter chosen for one purpose (keeping the graph sparse) silently
+overrode a decision made for another (declaring specific pathways essential). Worth checking
+wherever a global parameter and a specific exception coexist.
+
 ## 2c. Status by evidence, not by intent
 
 Sorted by how much would have to be wrong for the claim to fail.

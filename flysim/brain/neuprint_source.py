@@ -353,7 +353,9 @@ def fetch_subnetwork(
     Returns ``(neurons, connections)`` as DataFrames. The cache key covers every parameter
     that changes the result, so re-running never re-queries the server.
     """
-    key = f"{'-'.join(seed_types)}_h{hops}_s{min_synapses}_n{max_neurons}"
+    # "r" marks that the declared reliable pathways are exempt from the weight floor.
+    # Without it a cache built under the old rule would be reused silently.
+    key = f"{'-'.join(seed_types)}_h{hops}_s{min_synapses}r_n{max_neurons}"
     directory = _cache_dir(dataset)
     neurons_path = directory / f"{key}.neurons.parquet"
     conn_path = directory / f"{key}.connections.parquet"
@@ -395,10 +397,19 @@ def fetch_subnetwork(
         f"RETURN n.bodyId AS bodyId, n.type AS type, n.superclass AS superclass, "
         f"n.consensusNt AS nt, n.somaSide AS side, n.somaLocation AS soma"
     )
+    # A generic weight floor must not delete a pathway we have separately declared to be
+    # load-bearing. It did: DNp01 -> PSI has four edges in the reconstruction, and three of
+    # them (weights 2, 2, 3) fell below min_synapses=5. Only DNp01_L -> PSI_L survived, so
+    # the wing pathway became unilateral and `MotorCommand.powered` silently reduced to
+    # "did the LEFT Giant Fiber fire" -- measured by silencing each side in turn.
+    exempt = " ".join(
+        f'OR (a.type = "{pre}" AND b.type = "{post}")'
+        for pre, post in ELECTRICAL_SYNAPSES + SUPRATHRESHOLD_SYNAPSES
+    )
     connections = client.fetch_custom(
         f"MATCH (a:Neuron)-[w:ConnectsTo]->(b:Neuron) "
         f"WHERE a.bodyId IN [{ids}] AND b.bodyId IN [{ids}] "
-        f"AND w.weight >= {min_synapses} "
+        f"AND (w.weight >= {min_synapses} {exempt}) "
         f"RETURN a.bodyId AS pre, b.bodyId AS post, w.weight AS weight"
     )
     # somaLocation arrives as a GeoJSON-ish dict; flatten to plain columns so the
