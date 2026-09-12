@@ -448,9 +448,17 @@ class EncoderParams:
     """Division-by-zero guard: ``l / max(d, eps)``."""
 
     receptive_field_spread: float = 0.22
-    """Per-LC4 gain heterogeneity (fractional std-dev). LC4 neurons tile the visual field
-    with different receptive fields, so they do not all see the same expansion equally.
-    Seeded, so runs are reproducible."""
+    """Per-cell gain heterogeneity, fractional standard deviation. Seeded, so reproducible.
+
+    Justified as receptive-field variation -- cells tiling the visual field do not all see
+    an expansion equally -- but it was introduced partly because identical traces looked
+    wrong on the telemetry panel, and appearance is not a reason to add anything to this
+    model. It also now overlaps with `preferred_azimuth`, which represents the same
+    heterogeneity from measured anatomy rather than from a random number generator.
+
+    Kept for now because removing it changes every calibrated threshold, which is a change
+    that deserves its own step rather than being folded into another. It should be replaced
+    by the anatomical map, not merely deleted."""
 
     target_population: str = "LC4"
     """Which population receives the visual drive. Named, not indexed, so a connectome

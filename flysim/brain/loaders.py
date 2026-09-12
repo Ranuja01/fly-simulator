@@ -609,15 +609,22 @@ def connectome_from_tables(
     counts_str = ", ".join(f"{k}={len(v)}" for k, v in sorted(population_arrays.items()))
     print(f"  built connectome: {n:,} neurons, {int(nonzero.sum()):,} edges ({counts_str})")
 
-    # A subnetwork of only visual cells and the Giant Fiber is a degenerate circuit: the
-    # escape threshold in this model is set by feedforward inhibition outrunning
-    # excitation, so with no inhibitory population the reflex fires on raw drive alone and
-    # will trigger far earlier than it should. Easy to miss, because it still "works".
+    # A subnetwork of only visual cells and the Giant Fiber is degenerate, though the
+    # reason stated here was wrong for a long time. Feedforward inhibition outrunning
+    # excitation is how the hand-built 12-cell mock sets its threshold; on a real
+    # connectome it was never tested and does not hold -- 8 of 5,476 inhibitory cells ever
+    # fire, and DNp01 receives 12,629 inhibitory synapses that are essentially silent. The
+    # real threshold there is integrate-to-threshold on a convergence sum, with the angle
+    # set by where `pa_per_synapse` was fitted to put it.
+    #
+    # The warning is still worth keeping: a subnetwork missing its inhibitory cells is
+    # missing a large part of the measured wiring, and that is a reason to distrust it
+    # whatever the mechanism turns out to be.
     if "INH" not in population_arrays:
         print(
-            "  WARNING: no inhibitory population in this subnetwork. The escape threshold "
-            "is set by feedforward inhibition, so without it the reflex is ungated and "
-            "will fire early. Increase --flywire-hops or --flywire-max-neurons."
+            "  WARNING: no inhibitory population in this subnetwork. A large part of the "
+            "measured wiring is missing, so treat any threshold it produces with "
+            "suspicion. Increase --flywire-hops or --flywire-max-neurons."
         )
     if dropped:
         print(f"  dropped {dropped:,} modulatory edges (aminergic, no fast current modelled)")
