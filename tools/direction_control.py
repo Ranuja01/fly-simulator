@@ -76,6 +76,17 @@ def flip(runner, bearing_deg, rep):
             watch[i] = side_of.get(body, "?")
     ang = np.deg2rad(bearing_deg)
     unit = np.array([np.cos(ang), np.sin(ang)])
+    # WARM-UP. The threat is parked in a corner by reset(), so frame 0 jumps it to the
+    # start bearing -- and the length and RADIAL SIGN of that jump depend on the bearing.
+    # Measured: a front start recedes at -0.845 and produces no drive, a rear start
+    # approaches at +0.145 and produces a 47 pA pulse. That artefact alone manufactured a
+    # "front/rear separation" of +138 ms with retinotopy switched OFF. Holding the threat
+    # at the start point until the transient decays makes every bearing begin from rest.
+    for _ in range(40):
+        env.set_threat_position(float(unit[0] * 0.35), float(unit[1] * 0.35))
+        for _ in range(SPF):
+            runner.step()
+
     first = {}
     for f in range(150):
         env._fly_pos[:] = 0.0

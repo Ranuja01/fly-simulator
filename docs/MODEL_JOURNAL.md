@@ -237,6 +237,55 @@ again, at the scale of the whole nerve cord.
 Which means the leg muscles were never going to fire from a looming stimulus alone — nor,
 arguably, would a real fly's, with its legs reporting nothing back.
 
+## 2a. RETRACTION — the directional results were measured through a start-up artefact
+
+An external audit found it and direct measurement confirmed it. Recorded at the top because
+the affected claims were the project's headline results and were stated as verified.
+
+**The artefact.** `InteractiveEnvironment.reset()` parks the threat in a corner at
+(-0.495, -0.495). The measurement tools then call `set_threat_position` at the start
+bearing on frame 0, and the length *and radial sign* of that jump depend on the bearing:
+
+| bearing | jump | radial component | effect |
+|---|---|---|---|
+| front (0°), right (+90°) | 0.979 m | **-0.845** receding | no drive |
+| rear (180°), left (-90°) | 0.516 m | **+0.145** approaching | a ~47 pA pulse |
+
+So the four bearings split into two groups by where the threat happened to be parked, and
+that split is exactly the pattern the results showed.
+
+**Front/rear, retracted and re-measured.** The claimed +128 ms at DNp04, "reproducible
+across five seeds", persists at **+138 ms with retinotopy switched OFF** — it was never
+retinotopy. With a warm-up that lets every bearing start from rest:
+
+| | DNp04 front - rear |
+|---|---|
+| warm-up, tuning **off** | +6 ms (all pairs inside noise) |
+| warm-up, tuning **on** | **-42 ms** |
+
+Front/rear is real, about a third the claimed size, and **in the opposite direction**: rear
+is *slower*. Which is what the anatomy predicts — DNp04 draws less from a rear threat
+(rear/front 0.87 and 0.73) — and what the artefact had inverted.
+
+**Left/right, weakened.** Five repeats with the warm-up:
+
+| wiring | threat right | threat left |
+|---|---|---|
+| measured | +76, +88, +96, +96, +100 (mean **+91**) | +60, -104, +64, +36, -96 (mean -8) |
+| type-preserving shuffle | ~+5 | ~+18 |
+
+A right-side threat reliably makes the right Giant Fiber lead, by ~91 ms against ~5 ms for
+the shuffle — that is a genuine wiring-dependent effect and it survives. But the response is
+**one-sided**: a left-side threat produces no consistent lateralisation. "The sign flips
+with the threat's side" is wrong; the clean -180/-208 was the pulse.
+
+**The noise floor is also suspect**, since it was measured with the same protocol, and is
+bearing-dependent for the same reason.
+
+**Why it was missed.** This exact artefact was found and fixed earlier in the session — the
+warm-up exists in the scratch probes for precisely this reason — and then not carried into
+the tools written afterwards. The lesson in §6b is the right one and it was not applied.
+
 ## 2c. Status by evidence, not by intent
 
 Sorted by how much would have to be wrong for the claim to fail.
