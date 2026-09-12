@@ -275,9 +275,40 @@ is *slower*. Which is what the anatomy predicts — DNp04 draws less from a rear
 | type-preserving shuffle | ~+5 | ~+18 |
 
 A right-side threat reliably makes the right Giant Fiber lead, by ~91 ms against ~5 ms for
-the shuffle — that is a genuine wiring-dependent effect and it survives. But the response is
-**one-sided**: a left-side threat produces no consistent lateralisation. "The sign flips
-with the threat's side" is wrong; the clean -180/-208 was the pulse.
+the shuffle — a genuine wiring-dependent effect, and it survives. "The sign flips with the
+threat's side" is still wrong as stated; the clean -180/-208 was the pulse.
+
+**"One-sided" was itself a metric artefact, though.** Raw first-spike times, five repeats:
+
+| | left GF | right GF |
+|---|---|---|
+| threat right | 1108-1128 (tight) | 1028-1048 (tight) |
+| threat left | **1104, 968, 1112, 1104, 964** | 1080-1096 (tight) |
+
+The left Giant Fiber is **bimodal** on left-side threats — two clusters near 965 and 1108 —
+and that bistability scrambles the between-GF difference. Comparing each cell against
+*itself* across bearings is not confounded:
+
+| | threat right | threat left | ipsilateral advantage |
+|---|---|---|---|
+| right GF | **1038** | 1088 | 50 ms earlier |
+| left GF | 1120 | **~1035** | ~85 ms earlier |
+
+Both Giant Fibers fire earlier for a threat on their own side. The directional response is
+bilateral. Using a between-cell difference as the metric, when one cell is bistable, hid it
+— the same shape of error as measuring along the wrong axis.
+
+**The bimodality is real and unexplained.** The left GF sits at threshold during a left-side
+approach and noise decides whether it crosses at 965 or 1108. Trial-to-trial variability at
+a threshold is arguably realistic, real escape latencies being variable, but it is not
+something this model was designed to produce and it should not be claimed as a feature.
+
+**Why the left side has the advantage to begin with: wiring, not the encoder.** The encoder
+is symmetric to three significant figures — a right-side threat delivers 19.66 / 56.10 pA to
+the left and right eyes, a left-side threat 56.96 / 19.92. But left eye to left Giant Fiber
+is 163 cells and 6,418 synapses, against 139 cells and 4,780 for the right: **34% more
+convergence**. A right-side threat therefore has a structural handicap to overcome, and
+does.
 
 **The noise floor is also suspect**, since it was measured with the same protocol, and is
 bearing-dependent for the same reason.
