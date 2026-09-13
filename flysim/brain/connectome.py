@@ -53,6 +53,22 @@ class Connectome:
     connectome that renumbers its neurons breaks nothing.
     """
 
+    fast_weights: Any = None
+    """Optional ``(N, N)`` matrix of connections that bypass the axonal delay line, pA/spike.
+
+    Gap junctions are not chemical synapses. They are direct resistive coupling, with no
+    vesicle release and no axonal conduction to wait for, so giving them a chemical
+    synapse's 1.8 ms delay is simply wrong -- and it is 1.8 ms of a latency the animal
+    completes in 0.93 ms.
+
+    Entries here are delivered on the timestep after the spike (the shortest delay the
+    engine can represent) instead of after ``delay_ms``. They must NOT also appear in
+    ``weights``, or the connection is applied twice.
+
+    ``None`` means every connection uses the normal delay, which is the case for every
+    connectome that does not name a gap-junction pathway.
+    """
+
     param_overrides: dict[str, dict[str, float]] = field(default_factory=dict)
     """Population name -> ``{NeuronParams field: value}``.
 
@@ -129,6 +145,17 @@ class Connectome:
         stored = self.weights if isinstance(self.weights, np.ndarray) else self.weights.data
         if not np.all(np.isfinite(stored)):
             raise ValueError("weights contains NaN or inf.")
+
+        if self.fast_weights is not None:
+            fshape = getattr(self.fast_weights, "shape", None)
+            if fshape != (n, n):
+                raise ValueError(
+                    f"fast_weights shape {fshape} does not match {n} labels."
+                )
+            fstored = (self.fast_weights if isinstance(self.fast_weights, np.ndarray)
+                       else self.fast_weights.data)
+            if not np.all(np.isfinite(fstored)):
+                raise ValueError("fast_weights contains NaN or inf.")
 
         seen = np.zeros(n, dtype=bool)
         for pop_name, idx in self.populations.items():

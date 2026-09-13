@@ -318,8 +318,15 @@ def run_check(config: SimConfig, connectome_kwargs: dict | None = None) -> int:
     slow_runner = build_runner(slow, connectome_kwargs=connectome_kwargs)
     slow_runner.run()
     slow_summary = slow_runner.summary()
+    # This asserts the BEHAVIOUR, and deliberately says nothing about the mechanism. It
+    # used to claim "feedforward inhibition suppresses GF", which is false on this
+    # connectome: silencing all 3,688 inhibitory cells leaves the slow drift still failing
+    # to trigger and the real approach still triggering at the same millisecond. What
+    # withholds the reflex is the encoder -- a slow approach never produces enough drive
+    # to reach threshold. A test named for a mechanism it does not test is worse than one
+    # named for the behaviour it does. See MODEL_JOURNAL.md Step I.
     require(slow_summary["first_spike_ms"]["GF"] is None,
-            "feedforward inhibition suppresses GF for a slow approach")
+            "a slow approach does not trigger the reflex")
 
     print()
     if failures:

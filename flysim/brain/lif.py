@@ -203,13 +203,23 @@ class LIFBrain(BaseBrain):
         dispatch overhead.
         """
         self._sparse_weights = not isinstance(self._weights, np.ndarray)
-        if not self._sparse_weights:
-            return
+        if self._sparse_weights:
+            csr = self._weights.tocsr()
+            self._w_indptr = csr.indptr
+            self._w_indices = csr.indices
+            self._w_data = csr.data.astype(np.float32)
 
-        csr = self._weights.tocsr()
-        self._w_indptr = csr.indptr
-        self._w_indices = csr.indices
-        self._w_data = csr.data.astype(np.float32)
+        # The fast path: connections that do not wait on axonal conduction. Prepared
+        # identically, so the two differ only in which delay line feeds them.
+        self._fast_weights = getattr(self._connectome, "fast_weights", None)
+        self._has_fast = self._fast_weights is not None
+        if self._has_fast:
+            self._sparse_fast = not isinstance(self._fast_weights, np.ndarray)
+            if self._sparse_fast:
+                fcsr = self._fast_weights.tocsr()
+                self._f_indptr = fcsr.indptr
+                self._f_indices = fcsr.indices
+                self._f_data = fcsr.data.astype(np.float32)
 
     def _gather_offsets(self, rows: np.ndarray) -> np.ndarray | None:
         """Flat CSR positions for several rows at once, with no Python-level loop.
@@ -278,6 +288,10 @@ class LIFBrain(BaseBrain):
         self._spike_counts = np.zeros(self._n, dtype=np.int32)
         self._delay_buffer = np.zeros((self._delay_steps, self._n), dtype=bool)
         self._delay_cursor = 0
+        # One step, not zero: a spike is emitted at the END of a step, so the earliest it
+        # can be delivered is the next one. That floor is dt, which is 0.1 ms headless and
+        # 0.4 ms interactive -- report both rather than quoting the headless figure.
+        self._fast_buffer = np.zeros((1, self._n), dtype=bool)
         self._t_ms = 0.0
 
     @property
@@ -341,6 +355,26 @@ class LIFBrain(BaseBrain):
                     arriving.astype(np.float32) @ self._weights
                 ).astype(np.float32)
 
+        # --- 2b. Gap junctions: spikes from ONE step ago, no axonal delay -----------
+        if self._has_fast:
+            fast_arriving = self._fast_buffer[0]
+            if fast_arriving.any():
+                if self._sparse_fast:
+                    rows = np.flatnonzero(fast_arriving)
+                    starts = self._f_indptr[rows]
+                    counts = self._f_indptr[rows + 1] - starts
+                    total = int(counts.sum())
+                    if total:
+                        base = np.repeat(starts, counts)
+                        within = (np.arange(total)
+                                  - np.repeat(np.cumsum(counts) - counts, counts))
+                        off = base + within
+                        np.add.at(self._i_syn, self._f_indices[off], self._f_data[off])
+                else:
+                    self._i_syn += (
+                        fast_arriving.astype(np.float32) @ self._fast_weights
+                    ).astype(np.float32)
+
         # --- 3. Total input ---------------------------------------------------------
         i_total = self._i_syn + external + self._bias
 
@@ -381,6 +415,8 @@ class LIFBrain(BaseBrain):
         # --- 7. Push this step's spikes into the delay line -------------------------
         self._delay_buffer[self._delay_cursor] = transmitted
         self._delay_cursor = (self._delay_cursor + 1) % self._delay_steps
+        if self._has_fast:
+            self._fast_buffer[0] = transmitted
 
         self._t_ms += self._dt
 

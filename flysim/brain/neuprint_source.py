@@ -125,25 +125,39 @@ NT_SIGN_FULL: dict[str, float] = {
 # result: it is restoring a documented, named piece of anatomy that the data format cannot
 # represent. It is listed here, in one table, rather than folded into a scaling constant,
 # so that it stays visible and arguable.
-ELECTRICAL_SYNAPSE_PA = 55.0
+ELECTRICAL_SYNAPSE_PA = 175.0
 """Current per presynaptic spike across a modelled gap junction, pA.
 
-Sized so that ONE presynaptic spike fires the target, because that is the defining
-functional property of this connection: one Giant Fiber spike, one jump. It is a statement
-about reliability, not a measurement of conductance.
+**Set by the measured latency, not by a conduction requirement.** von Reyn et al. report
+TTM firing 0.93 ms after the giant fiber and DLM 1.44 ms after. Those numbers fix this
+constant, because in a leaky integrator the time to threshold is set by how hard the cell
+is driven: the stronger the input, the sooner it crosses.
 
-Derived rather than guessed. A single instantaneous current jump of amplitude A, decaying
-with ``tau_syn`` into a membrane with time constant ``tau_m``, peaks at::
+The earlier value, 55 pA, was derived from a different and weaker requirement -- that ONE
+spike must carry the target across the 7 mV gap *at all*. That makes the pathway conduct
+but says nothing about when, and it conducted 5.5x too slowly.
 
-    V_peak = R * A * (tau_syn / (tau_m - tau_syn)) * (exp(-t/tau_m) - exp(-t/tau_syn))
+Measured on the real connectome, with these connections bypassing the axonal delay line:
 
-which for the Shiu et al. parameters (tau_m 20 ms, tau_syn 5 ms, R 1 GOhm) comes to
-0.157 * A, at t = 9.2 ms. Crossing the 7 mV gap from rest to threshold therefore needs
-at least 44 pA; 55 leaves margin against inhibition arriving at the same moment.
+===========  ==============  ==============
+pA/spike     GF -> TTMn      GF -> DLMn
+===========  ==============  ==============
+55            3.60 ms         7.30 ms
+150           1.00 ms         2.00 ms
+**175**       **0.90 ms**     **1.80 ms**
+250           0.60 ms         1.20 ms
+===========  ==============  ==============
 
-The first attempt used 12 pA -- the STEADY-STATE current for a 7 mV deflection -- and the
-motor neurons stayed silent, because a single spike never reaches steady state. It peaked
-at 1.9 mV.
+175 puts the one-hop measurement (GF -> TTMn, published 0.93) almost exactly on target.
+The two-hop path is chosen against rather than averaged with it, because it is the more
+confounded quantity -- and note that our two-hop latency is exactly 2x the one-hop, while
+the published pair is 1.44/0.93 = 1.55x. **No single current can match both**, because the
+ratio is fixed by the architecture. That residual says PSI -> DLMn is faster in the animal
+than GF -> PSI, which this model has no way to express yet, and it is recorded rather than
+tuned away.
+
+Removing the axonal delay alone was not enough: it took GF -> TTMn from 5.10 to 3.60 ms,
+still 3.9x the target. **Membrane charging dominates the latency, not conduction.**
 """
 
 ELECTRICAL_SYNAPSES: tuple[tuple[str, str], ...] = (
@@ -475,6 +489,7 @@ def build_neuprint(
     # Modulatory neurons map to sign 0; dropping those edges keeps the matrix honest
     # about how many real connections it holds.
     # Restore the electrical connections the data format cannot carry.
+    is_fast = np.zeros(len(connections), dtype=bool)
     type_of = neurons["type"].astype(str)
     pre_types = connections.pre.map(type_of).fillna("")
     post_types = connections.post.map(type_of).fillna("")
@@ -492,11 +507,16 @@ def build_neuprint(
             )
         if selected.any():
             data = np.where(selected, current, data).astype(np.float32)
+            is_fast |= selected
             pairs = ", ".join(f"{a}->{b}" for a, b in table)
             print(f"  {int(selected.sum())} {note} ({pairs}) at {current} pA/spike")
 
-    nonzero = data != 0.0
-    dropped = int((~nonzero).sum())
+    # These pathways skip the axonal delay line -- see Connectome.fast_weights. Removing
+    # them from `data` rather than leaving them in both matrices is what stops the
+    # connection being applied twice.
+    nonzero = (data != 0.0) & ~is_fast
+    fast_nonzero = (data != 0.0) & is_fast
+    dropped = int(((data == 0.0)).sum())
 
     if n > 3000:
         import scipy.sparse as sp
@@ -508,6 +528,23 @@ def build_neuprint(
         weights = np.zeros((n, n), dtype=np.float32)
         # np.add.at accumulates duplicates rather than overwriting.
         np.add.at(weights, (rows[nonzero], cols[nonzero]), data[nonzero])
+
+    if fast_nonzero.any():
+        if n > 3000:
+            import scipy.sparse as sp
+
+            fast_weights = sp.coo_matrix(
+                (data[fast_nonzero], (rows[fast_nonzero], cols[fast_nonzero])),
+                shape=(n, n), dtype=np.float32,
+            ).tocsr()
+        else:
+            fast_weights = np.zeros((n, n), dtype=np.float32)
+            np.add.at(fast_weights, (rows[fast_nonzero], cols[fast_nonzero]),
+                      data[fast_nonzero])
+        print(f"  {int(fast_nonzero.sum())} of those bypass the axonal delay line "
+              f"(gap junctions do not wait on conduction)")
+    else:
+        fast_weights = None
 
     have_xyz = all(c in neurons.columns for c in ("x", "y", "z"))
     positions = np.full((n, 3), np.nan, dtype=np.float64) if have_xyz else None
@@ -561,6 +598,7 @@ def build_neuprint(
         name=f"neuprint-{dataset}",
         labels=tuple(labels),
         weights=weights,
+        fast_weights=fast_weights,
         populations=population_arrays,
         hemisphere=hemisphere,
         preferred_azimuth=preferred,

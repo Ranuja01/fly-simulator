@@ -76,8 +76,8 @@ write-up rather than from primary literature we have read.
 | GF fires across the loom speed range | Ache r/v 10-80 ms | fails below r/v ~12 ms | **fail at the fast end** |
 | silencing LC4 *and* LPLC2 abolishes the escape | established | no takeoff, fly captured | **pass** |
 | silencing LPLC2 nearly abolishes it | established | abolished, `--channels` | **pass** |
-| TTM fires 0.93 ms after the giant fiber | their page, cited as measured | 5.7 ms | **fail, 6x** |
-| DLM fires 1.44 ms after the giant fiber | their page, cited as measured | ~12 ms | **fail, 8x** |
+| TTM fires 0.93 ms after the giant fiber | von Reyn et al. | 0.90 ms | **pass** |
+| DLM fires 1.44 ms after the giant fiber | von Reyn et al. | 1.80 ms | **pass** |
 | short takeoff completes under 6.87 ms | their page | not measured | **unknown** |
 | GF-mediated takeoff threshold ~39 deg angular size | von Reyn et al. 2014 | 40.8 deg, `--channels` | **pass** |
 | GF response peaks at 42 deg angular size | Ache et al. 2019 | size channel peaks at 42 | **by construction** |
@@ -460,12 +460,18 @@ the model was ever fitted to, so "the model fails there" is partly "we are using
 its domain". The 0.80 m/s case is inside the range and does fail: the giant fiber fires and
 no takeoff follows, which Step E localised to the 19 ms delay rather than the encoder.
 
-**6. Components of the published model we do not have.** Eq. 7 sums four terms, and we
-implement two. The missing pair are both inhibitory: a tonic hyperpolarization that is a
-sigmoid in angular size (eq. 5, weight **2.27** — the largest weight in the model), and a
+**6. Components of the published model we do not implement, deliberately.** Eq. 7 sums four
+terms and we have two. The other pair are inhibitory: a tonic hyperpolarization that is a
+sigmoid in angular size (eq. 5, weight **2.27** — the largest weight in the model) and a
 small LC4-dependent Gaussian peaking at 26 degrees (eq. 6, weight 1). We supply inhibition
-from the connectome's own INH population instead, which is a different thing and not
-obviously equivalent. This is the most substantial known gap between our encoder and theirs.
+from the connectome's own INH population instead.
+
+This was first written up here as "the most substantial known gap between our encoder and
+theirs", which was the wrong framing — see §1a. Those components sit *downstream* of the
+boundary where published description is legitimate: they describe what the giant fiber's
+inhibitory partners do, and we have 3,688 of those cells wired by measured synapses.
+Implementing the fitted curves would improve our agreement with the published traces
+without the wiring having earned it. They are a **prediction to test**, not a gap to fill.
 
 **7. Anatomy the paper confirms independently.** 55 LC4 and 108 LPLC2 synapse onto the GF,
 with 2,442 and 1,366 synapses — a ratio of 1.79, matching the scorecard row. "LPLC2 and LC4
@@ -476,6 +482,305 @@ synapses), the likely source of the supralinear summation.
 **8. The lesion target, quantified.** Short-mode takeoffs fell from 26% to 3% with TNT and
 17% to 7% with Kir. "Near-abolished" is the right reading, and our binary abolition is at
 the strong end of it.
+
+### Step H, H1 run: does our wiring produce the published inhibition?
+
+The first experiment that tests the **connectome** rather than the boundary we inject into.
+Every scorecard row so far measures our encoder; this one asks whether the measured synapses
+reproduce something we deliberately did not implement (§1a).
+
+**Subgoal.** Determine whether the giant fiber's inhibitory input, as wired in the
+connectome, reproduces the tonic hyperpolarization Ache et al. measured — and if not, say
+precisely what is missing.
+
+**The published measurement.** Static disks of different angular sizes appear and remain for
+1 s; GF membrane potential is averaged over a 200 ms window starting 200 ms after
+appearance (Fig 2I, 2J). The result is size-tuned hyperpolarization, fitted by eq. 5:
+
+    Vi1 = C5 + C6 / (1 + exp( -(theta(t - d3) - C7) / C8 ))
+    C5 = -0.53, C6 = 0.59, C7 = 66 deg, C8 = -11, d3 = 0.0375 s
+
+which runs from about **+0.06 mV at 5 degrees to -0.47 mV at 90 degrees**. Critically, it
+was **unchanged** in LC4-silenced, LPLC2-silenced and control flies — so in the animal it
+derives from input independent of both.
+
+**H1 result: the anatomy is there, the activity is not. H2 is not worth building.**
+
+274 of the 3,688 INH cells are presynaptic to the giant fiber. Of the synaptic weight
+arriving at those 274, only **15% comes from LC4/LPLC2** — the cells we inject into — and
+**85% from 1,350 other sources**. On the weight test alone, the wiring looks capable of
+supporting an inhibitory component largely independent of the two driven populations, which
+is what the paper measures. That is the encouraging half.
+
+Then the activity:
+
+| of the 274 INH cells presynaptic to the giant fiber | ever fire in a full escape episode |
+|---|---|
+| LC4/LPLC2 intact | **1** |
+| LC4/LPLC2 silenced | **0** |
+
+**One cell.** The substrate exists and is almost entirely silent, because those 1,350 other
+presynaptic partners have no drive of their own: 98% of them are reachable from our single
+injection point, and reachable is not the same as driven. This is the same finding as the
+propagation problem in §5, arriving from a different direction — **we stimulate one input of
+many**, and a connectome full of correctly wired cells does nothing without input.
+
+So our model cannot reproduce the published tonic hyperpolarization, and the reason is not
+missing anatomy. It is that the inhibitory cells' own visual drive is outside what we supply.
+
+**My H1 criterion asked the wrong question.** It was written around the *weight* fraction —
+"if their input is overwhelmingly from LC4/LPLC2, H2 is not worth building". The weight
+fraction said go ahead (85% independent); the activity said stop. A structural criterion
+about connectivity cannot settle a question about signal, and the two answers here point in
+opposite directions. **Where a criterion can be phrased over anatomy or over activity,
+phrase it over activity.**
+
+**A claim now in doubt.** `--check` asserts "feedforward inhibition suppresses GF for a slow
+approach", and it passes. But if only one inhibitory cell presynaptic to the giant fiber ever
+fires, whatever withholds the escape on a slow approach is largely **not** direct inhibition
+onto the giant fiber. The check's name may describe a mechanism it does not test. Not yet
+investigated, and not to be repeated as fact until it is.
+
+**H1 follow-up: it is not how many cells we inject into.** Ranuja's reading — that the real
+problem is injecting at a target and expecting propagation to behave as it would in life —
+is what the numbers say. Driving progressively more of the input surface changes nothing
+about the inhibitory population:
+
+| what we drive | cells that ever fire | INH cells presynaptic to GF |
+|---|---|---|
+| 312 (LC4 + LPLC2, split) | 338 of 22,973 (1.5%) | **1 of 274** |
+| 966 (all visual projection, combined) | 984 (4.3%) | **1 of 274** |
+| 966 + 3,201 T4/T5 (one layer earlier) | 1,761 (7.7%) | **1 of 274** |
+
+Tripling the driven surface, and stepping a whole synaptic layer earlier, moves the number
+not at all.
+
+**The mechanism, measured.** Of the synaptic weight arriving at those 274 cells, **81.8%
+comes from cells that never fire** in the entire episode. Their largest sources are PMN
+(33%) and other INH cells (28%) — populations that are themselves almost entirely silent.
+It is a **chain of silence**: every layer sits subthreshold, so nothing survives more than a
+couple of hops from the injection, whatever the injection's breadth.
+
+**Why a real brain does not have this problem.** A central neuron in life is under continuous
+synaptic bombardment from thousands of cells, most of them outside any subgraph one might
+fetch. That background holds it near threshold, so a modest signal can carry it over. Our
+`bias_current_pa` is 0.0 and every cell rests a full 7 mV below threshold with no background
+at all. **The absence of background is itself a modelling choice**, and an invisible one —
+it was never decided, it was inherited from a 12-neuron circuit where it was correct.
+
+**Two responses, and the honest problem with each.**
+
+* **Fetch more brain.** Truer, and it recurses without terminating: whatever is fetched has
+  its own silent upstream, because the brain is recurrent and the only true edge is the
+  sensory surface. Reaching that edge means photoreceptors and an image, which is a far
+  larger change than it sounds — though for a looming disk it needs geometry, not a
+  renderer, so it is not strictly coupled to going 3D.
+* **Declare a background drive.** Legitimate under §1a — it is a boundary condition standing
+  in for brain we did not fetch, exactly like injecting into LC4 stands in for the optic
+  lobe. But it is the most dangerous parameter this model could acquire: enough background
+  makes any cell fire, and a result produced that way would look like propagation while
+  being a property of the constant. It must not be added without a criterion, and any
+  version of it must be checked against `tools/shuffle_control.py` — if a shuffled
+  connectome escapes just as well, the background is doing the work, not the wiring.
+
+Neither is started. The finding to carry forward is that **the model's silence is not a bug
+in the wiring and not a shortage of injected cells — it is the absence of the rest of the
+brain**, and that absence has been doing quiet work in every propagation result so far.
+
+**Run it in two parts, cheap one first.**
+
+**H1, structural — can it possibly succeed?** Our model injects current into LC4 and LPLC2
+and nowhere else, so every inhibitory cell we have is driven *through* them. The published
+hyperpolarization is LC4/LPLC2-**independent**. If our INH population has no drive except
+via the cells whose silencing leaves the real hyperpolarization untouched, then our
+inhibition is feedforward by construction and cannot reproduce an independent component —
+and that is the answer, reached without building any stimulus machinery.
+
+*Done-criterion for H1:* report, for the INH cells presynaptic to DNp01, what fraction of
+their input synapses arrive from LC4/LPLC2 versus from cells outside that pathway. If it is
+overwhelmingly the former, H2 is not worth building and the finding is structural.
+
+**H2, behavioural — only if H1 leaves room.** Present static disks at a spread of angular
+sizes, hold them, and measure mean GF membrane potential over the published window.
+
+*Done-criterion for H2:* the measured curve is monotonically hyperpolarizing with angular
+size above ~20 degrees, and the total swing between the smallest and largest disk is within
+a factor of two of the published 0.53 mV. Sign and monotonicity matter more than magnitude,
+because our picoamp scale is fitted and theirs is measured.
+
+**What could make the measurement lie**, written before measuring:
+
+* **The signal is at our noise floor.** The published swing is ~0.53 mV; `noise_mv` is 0.35
+  mV per neuron per step. Measure the noise floor across repeated trials with no stimulus
+  **first**, and report it beside the effect. Without that, any curve is uninterpretable.
+* **Our encoder drives LPLC2 on a static disk, and the animal's does not.** The paper notes
+  LPLC2 "require looming motion to be active"; our size channel is a function of instantaneous
+  angular size alone, so a stationary disk of 42 degrees drives it at full strength. This is a
+  real discrepancy in its own right and must be recorded separately — but it also contaminates
+  H2, because our static-disk response is not the animal's static-disk response. Consider
+  driving the *velocity* channel to zero and the size channel as the animal would leave it.
+* **A subthreshold read needs the cell not to spike.** The paper analysed only trials with no
+  action potential, for exactly this reason. Ours must do the same or the average is dominated
+  by reset dynamics.
+* **The environment has no static-disk mode.** Building one is new machinery, and new
+  machinery is where artefacts come from — the start-up teleport that produced a retracted
+  result (§2a) was exactly this. Warm up before measuring, and verify the disk is actually
+  static by reading back angular size per frame.
+* **`LIFBrain.silence` gates transmission but the neuron still spikes.** Any lesion control
+  here must silence upstream, not the readout cell.
+* **A null result is the likely one, and is worth stating plainly.** If the wiring cannot
+  produce the published inhibition, that is information about what our subgraph lacks — an
+  independent visual drive to the inhibitory cells — not a failure of the experiment.
+
+### Step I, run: 95% of the model is inert, and that reframes the goal
+
+Ranuja asked how much the 22,000 surrounding cells actually matter, given the aim is a fly
+that *behaves* like a fly. Measured by silencing them:
+
+| silenced | escape | takeoffs | GF spike |
+|---|---|---|---|
+| nothing | 38.58 deg | 2 | 1273.8 ms |
+| INH (3,688) | 38.58 deg | 2 | 1273.8 ms |
+| PMN (11,437) | 38.58 deg | 2 | 1273.8 ms |
+| **INH + PMN + T4T5 (21,915)** | **38.58 deg** | **2** | **1273.8 ms** |
+
+**Silencing 95% of the model changes nothing, to the last decimal.** The escape is produced
+by roughly 340 cells: the 312 we inject into, and ~26 downstream along
+LC4 -> DN -> GF -> TTMn/PSI -> DLMn. Everything else is scenery.
+
+**A documented claim, falsified.** `--check` asserts *"feedforward inhibition suppresses GF
+for a slow approach"*, and it passes. With every inhibitory cell silenced, the slow drift
+**still** fails to trigger and the real approach **still** triggers at the same millisecond.
+Inhibition plays no part in the gating. What withholds the escape from a slow approach is the
+encoder: the drive never reaches threshold. The test is correct about the behaviour and wrong
+about the mechanism, and its name should say what it tests.
+
+**The reframe this forces.** Two different targets have been running together:
+
+* **Behavioural fidelity** — the fly does what a fly does. Achievable through validated
+  pathways, and it is what the scorecard actually measures. **No scorecard row is blocked by
+  the propagation problem.**
+* **Mechanistic fidelity** — the network computes it the way the brain does. This *is*
+  blocked, by two independent order-of-magnitude deficits (§ the capacity work above).
+
+Everything in the last several steps has been chasing the second. The stated goal is the
+first, and the first is not blocked.
+
+**What this makes the model, stated plainly.** A **behaviour library on measured anatomy**:
+each pathway anatomically real, its weights taken from the connectome, its behaviour checked
+against published numbers — with the surrounding cells present but inert. That is a legitimate
+and useful kind of model. It is **not** a brain simulation, and must not be described as one.
+The cost is that it can never show emergence: every behaviour is one we chose to wire and
+validate, so the model cannot surprise us. The benefit is that every behaviour it does have is
+checkable, and it actually behaves.
+
+**What now stands between here and "a fly in a 2D arena".** Not the 22,000 cells. The
+behaviours that are still scripted geometry: escape *direction*, walking and turning, flight
+steering, landing. Each needs its own validated wire, exactly as the escape did — not a
+network that conducts. Prior evidence that this works: driving the locomotor command neurons
+(MDN, DNa01/02) at 0.05-0.15 pA/synapse already produces leg motor activity.
+
+### Step J, run: per-connection delay, and the gap-junction latency
+
+**Result: both targets met, and the diagnosis in the criterion was wrong.**
+
+| | before | after | published |
+|---|---|---|---|
+| GF -> TTMn, headless | 5.10 ms | **0.90 ms** | 0.93 ms |
+| GF -> DLMn, headless | 10.60 ms | **1.80 ms** | 1.44 ms |
+| GF -> TTMn, interactive (dt 0.4) | -- | 1.20 ms | 0.93 ms |
+| GF -> DLMn, interactive (dt 0.4) | -- | 2.00 ms | 1.44 ms |
+
+**The axonal delay was not the problem.** The criterion assumed it was, and named
+per-connection delay as the fix. Removing all 1.8 ms of it took GF -> TTMn from 5.10 to
+3.60 ms -- still 3.9x the target. **Membrane charging dominates the latency**, and in a
+leaky integrator that is set by how hard the cell is driven. So the measured latency fixes
+the *current*, a constant we had only ever justified as "enough to conduct at all".
+
+Both changes were needed and both are physically motivated:
+
+* Gap junctions bypass the delay line (`Connectome.fast_weights`, delivered one timestep
+  after the spike rather than after 1.8 ms). They are resistive coupling; there is no
+  vesicle release and no axon to conduct along.
+* `ELECTRICAL_SYNAPSE_PA` 55 -> **175**, derived from the 0.93 ms latency rather than from
+  the 7 mV gap. The old value answered "does it conduct"; the new one answers "when".
+
+**One current cannot match both targets, and that is structural.** Our two-hop latency is
+exactly 2x the one-hop, because GF -> PSI and PSI -> DLMn are given identical dynamics. The
+published pair is 1.44/0.93 = **1.55x**. So the animal's second hop is *faster* than its
+first, which this model has no way to express. 175 pA was chosen to put the one-hop
+measurement -- the direct, least confounded one -- on target, rather than to minimise total
+error across a comparison whose shape we know is wrong. The 0.36 ms residual on DLMn is
+that structural mismatch, not slack in the fit.
+
+**A prediction that did not come true, at a resolution that cannot settle it.** The
+criterion predicted the escape threshold would fall about 2.4 degrees, because the muscle
+now hears 4.2 ms sooner. It did not move: 38.6 degrees before and after. The metric is
+quantised by the frame at which angular size is sampled, in steps of roughly 2 degrees, so
+a 2.4 degree shift is one quantum and the takeoff fell in the same frame. **Neither
+confirmed nor refuted** -- recorded that way rather than claimed as a success.
+
+The channel calibration was re-run as the criterion required. Velocity gain 2.2 with size
+gain 227.7 still passes both targets at 38.6 degrees and still sits centrally in the
+passing region, so no refit was needed. All 15 `--check` assertions pass on the real
+connectome.
+
+
+**Subgoal.** Give the electrical synapses their own conduction delay and time constant, so
+the giant fiber reaches muscle in roughly the measured latency instead of 5.5x it.
+
+**The gap, measured at the current calibration.**
+
+| | model | published | error |
+|---|---|---|---|
+| GF -> TTMn (jump) | 5.10 ms | 0.93 ms | **5.5x** |
+| GF -> DLMn (wing) | 10.60 ms | 1.44 ms | **7.4x** |
+
+For scale: the animal's entire short-mode takeoff completes in **under 6.87 ms** (Ache et
+al. Fig 1C). Ours has not reached the wing muscle by then.
+
+**Cause, already known and not in doubt.** `ELECTRICAL_SYNAPSES` restores two gap-junction
+pathways that EM connectomics cannot see, but restores only their *strength*. They still
+inherit a chemical synapse's 1.8 ms axonal delay and 5 ms synaptic time constant. A gap
+junction has neither: it is a direct resistive connection, effectively instantaneous, with
+no synaptic filtering. We fixed the amplitude of that pathway and left its dynamics wrong.
+
+**Why the engine refuses.** `lif.py` uses **one shared ring buffer** of spike vectors and
+raises explicitly if `delay_ms` varies by population. The delay is a property of the buffer,
+not of the connection. Heterogeneous delay means either several buffers or a restructure.
+
+**Done-criterion.** GF -> TTMn within **0.93 +/- 0.5 ms** and GF -> DLMn within
+**1.44 +/- 0.7 ms**, with every existing `--check` assertion still passing on the real
+connectome. If a delay small enough to hit the first target cannot be represented at the
+brain timestep, that is the result and it is a statement about `brain_dt_ms`, not a failure
+to be tuned around.
+
+**What could make the measurement lie**, written before measuring:
+
+* **The threshold will move, and that is expected, not a regression.** The muscle hearing
+  4.17 ms sooner means the threat is ~2.4 degrees smaller when the takeoff is recorded:
+  38.6 -> roughly 36.2. That is still inside 39 +/- 3 but close to the edge. **Re-run
+  `tools/calibrate_channels.py` afterwards**, and if the refit lands outside the band, say
+  so rather than widening the band.
+* **A 0.93 ms target against a 0.4 ms interactive timestep is two samples.** Interactive
+  runs use `brain_dt_ms = 0.4`; a delay of 1-2 steps is all the resolution there is, so the
+  interactive and headless numbers will differ. Report both, and do not fit to the headless
+  one and quote it as the model's latency.
+* **Latency is measured between *first spikes* of populations**, which is not the same as
+  the latency of one connection. TTMn's first spike could in principle be driven by a route
+  other than the gap junction. Verify the path before attributing the improvement to it.
+* **A shared delay buffer means changing the global `delay_ms` moves everything.** If the
+  fix is implemented as "make the global delay smaller", every pathway in the model speeds
+  up and the escape threshold moves for a second, unrelated reason. The change must be
+  *per-connection* or the measurement is confounded.
+* **Two targets, one mechanism.** GF->TTMn is direct; GF->DLMn goes through PSI and so
+  carries one more synapse. If both land only by tuning two numbers independently, the fit
+  is unconstrained in the way Step C was. Prefer one physically motivated change (gap
+  junctions are fast) over two fitted delays.
+
+**Not in scope for this step.** Making the rest of the network conduct. Step I established
+that 95% of the model is inert and that this does not block the behavioural goal; this step
+fixes a latency inside the working wire, nothing more.
 
 ### How a step is run
 
@@ -553,6 +858,50 @@ this document claimed the shuffle control showed "the escape vanishes entirely" 
 be reproduced by a reader, and is wrong.** When the experiment was finally written
 (`tools/shuffle_control.py`) it produced a more interesting and much less flattering
 result.
+
+### 1a. What the literature is for, and where it must stop
+
+Added after a proposal to implement the two inhibitory components of Ache et al.'s eq. 7,
+which this document had called "the most substantial known gap between our encoder and
+theirs". That framing was wrong, and the reason it was wrong is worth stating as a rule.
+
+**Their model and ours are different kinds of model.** Ache et al. fit curves to recorded
+giant-fiber voltage: a phenomenological description of what the neuron does. This is a
+mechanistic simulation: leaky integrate-and-fire cells wired by measured synapses, from
+which behaviour is supposed to *emerge*. Two models of the same animal, answering different
+questions. They should not converge in implementation, and a gap between them is not
+automatically a defect in ours.
+
+So published values sort into three kinds, and only two of them may enter the code:
+
+* **Targets — always adopt.** What the system must *do*: the ~39 degree threshold, the
+  LPLC2 lesion abolishing escape, the 0.93 ms giant-fiber-to-muscle latency, the direction
+  of the speed dependence. These constrain without dictating, and they are what the
+  scorecard is made of.
+* **Boundary conditions — adopt the form.** Where our model simply *has no upstream*. We do
+  not simulate photoreceptors or the optic lobe, so current is injected into LC4 and LPLC2
+  directly; eqs. 3 and 4 describe exactly the machinery we are missing, and using them is
+  honest substitution rather than smuggling. They are labelled as the boundary they are.
+* **Mechanisms the wiring is supposed to explain — never adopt.** The inhibitory components
+  of eqs. 5 and 6 are *downstream* of the boundary. They describe what the giant fiber's
+  presynaptic inhibitory partners do — and **we have those cells**, 3,688 of them in the
+  INH population, wired by measured synapses. Pasting in a fitted sigmoid would replace a
+  prediction with an assumption, and the model could no longer be wrong about it.
+
+**The test of a rule is what it forbids.** This one forbids the change that would most
+improve our agreement with the published traces, and it forbids it precisely *because* it
+would improve that agreement without the wiring having earned it.
+
+**It also converts a gap into an experiment.** Eqs. 5 and 6 stop being components we lack
+and become a **prediction we can check**: does the connectome's own inhibition reproduce
+the measured tonic hyperpolarization — a sigmoid in angular size, saturating near 66
+degrees — and the small LC4-dependent dip near 26 degrees? That is a real test of the
+wiring, with published curves to fail against, and it is worth far more than reproducing
+those curves by construction.
+
+**The boundary is a judgement, not a formula.** Where our model has no upstream, published
+description is the only option; where it has the cells, the cells must do the work. Cases
+that sit near the line get argued in this document before code is written, not after.
 
 ---
 
