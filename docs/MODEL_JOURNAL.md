@@ -782,7 +782,7 @@ to be tuned around.
 that 95% of the model is inert and that this does not block the behavioural goal; this step
 fixes a latency inside the working wire, nothing more.
 
-### Step K, K1 and part of K2 run: escape direction from the neurons, not from the geometry
+### Step K, K1 and K2 run: escape direction from the neurons, not from the geometry
 
 The first step that moves the *behaviour* rather than the reflex. Every previous step
 improved when the fly jumps; this one is about where it goes.
@@ -886,6 +886,48 @@ If it is adopted it must be as a **declared, switchable hypothesis about reconst
 completeness**, with the raw asymmetry still reachable, and with the shuffle control run
 against both. The shuffle that K2 was written to run has still not been run.
 
+**K2 proper: the directional code requires the measured wiring.** TTMn left-minus-right
+first spike, averaged over two bearings and two seeds per side, on the equalised network:
+
+| wiring | threat RIGHT | threat LEFT | flips? |
+|---|---|---|---|
+| **MEASURED** | **-35.0 ms** | **+31.0 ms** | **yes** |
+| type-preserving shuffle | -13.0 ms | -4.0 ms | no |
+| degree-preserving shuffle | no spikes | no spikes | no conduction |
+
+The type-preserving shuffle is the strong null: it keeps every cell type, the weights
+between every pair of types, the recorded sides, hemifield tuning, and the restored gap
+junctions. It differs from the real network in exactly one respect -- which individual
+cells are wired to which. **It cannot reproduce the flip.** What survives in it is a small
+constant left-lead of a few milliseconds, with no bearing dependence, which is the same
+shape as the retinotopy-off control's constant ~-25 ms.
+
+So the answer to the question K2 was written to ask is: **not just our own tuning handed
+back.** Hemifield tuning supplies azimuth to both networks equally; only the measured one
+turns it into a sign that follows the threat.
+
+**A correctness fix the null models needed first.** `_rebuild` listed the fields to carry
+across explicitly, and `fast_weights` -- added the same day for the gap-junction latency --
+was not among them. Every shuffle would have been built without the electrical synapses, so
+the escape pathway would not have conducted and each null would have failed for a reason
+having nothing to do with its wiring. That is the rigged comparison the tool's own docstring
+warns against, reintroduced by a field addition elsewhere. Now uses `dataclasses.replace`,
+so a new field is carried by default rather than silently dropped.
+
+**Three things this result is not.**
+
+* It is **two seeds and two bearings per side**, not a distribution. The separation is large
+  against K1's measured spread of +/-2-6 ms, but the sample is small.
+* The degree-preserving shuffle produced **no spikes at all**, so it says nothing about
+  direction. It fails an earlier gate -- conduction -- and must not be counted as a second
+  independent confirmation.
+* It is measured on the **equalised** network. On the raw one the 34% convergence asymmetry
+  stops the right giant fiber firing at all for right-side threats, so there is no usable
+  code to test. The honest form of the claim is therefore conditional: *if* the asymmetry is
+  a reconstruction artefact, the measured wiring computes escape direction and no shuffle of
+  it does. If the asymmetry is real biology, this model's fly is deaf on one side and the
+  code is not available to it.
+
 **Run it in three parts, cheap first.**
 
 **K1 — is there a usable signal at all?** Sweep the threat's starting bearing around the
@@ -938,6 +980,60 @@ finding about the fly.
 **Out of scope for this step.** Pre-takeoff leg posture, which the scorecard marks out of
 reach and which is where the animal's directional control mostly lives. K3 replaces a
 geometric constant with a neural readout; it does not claim to reproduce how a fly aims.
+
+### The 34% asymmetry, measured against the dataset's own distribution
+
+Whether the giant fiber's left/right convergence difference is biology or reconstruction was
+blocking K3. Rather than argue it, it was measured against every other bilateral cell type in
+the subgraph -- turning a judgement about someone else's data into a comparison with that
+data's own spread. No refetch: all of this is in the cache.
+
+**Asymmetry is pervasive, and it is not sampling noise.** Absolute left/right difference in
+total excitatory input, by cell type:
+
+| restriction | types | median | within 10% |
+|---|---|---|---|
+| >= 1 cell per side | 444 | 29.2% | 17% |
+| >= 3 cells per side | 112 | 35.9% | 16% |
+| >= 5 cells per side | 72 | 41.9% | 10% |
+| **>= 10 cells per side** | **62** | **42.9%** | **8%** |
+
+If this were small-sample noise it would shrink with better sampling. It **grows**. Only 8%
+of well-sampled bilateral types have their two sides within 10% of each other.
+
+**It is also systematic, and it runs the opposite way to the giant fiber's.** Of the 112
+well-sampled types, **79% are right-biased**, median signed imbalance -0.198. Over the whole
+subgraph, left receives 2,693 pA against right's 3,733 -- a ratio of **0.722**, or about 20%
+per cell after accounting for the 10,606/12,209 cell-count difference.
+
+The giant fiber's visual input ratio is **1.339** -- left-heavy, against a dataset that is
+globally right-heavy. So the easy explanation is not available: **this is not the global
+tracing bias showing through**, because the global bias points the other way.
+
+**What can be concluded, and what cannot.**
+
+* **Cannot** conclude the 34% is a reconstruction artefact. It runs against the systematic
+  bias, so it is not simply one hemisphere traced more deeply.
+* **Cannot** conclude it is biology either. The median well-sampled bilateral type in this
+  dataset differs between sides by **43%**. A 34% difference is *below this dataset's own
+  noise floor for left/right claims*. It is not distinguishable from the amount by which
+  this reconstruction routinely differs between sides for no biological reason.
+* **Can** conclude that **no left/right claim from this dataset is safe at the 34% level**,
+  and that includes any our own model makes. That is the finding, and it is more useful than
+  a verdict on this one pathway would have been.
+
+**Consequence for the model.** Equalising the giant fibers is therefore a **declared
+sensitivity test**, not a correction: *if the two sides were symmetric -- which the dataset
+cannot rule out at this magnitude -- the measured wiring computes escape direction and no
+shuffle of it does (K2).* It must be labelled that way wherever it appears, and the raw
+asymmetry must stay reachable. Adopting the equalised network as the default and quietly
+dropping the qualifier would be exactly the move §1 forbids.
+
+**This also bears on the dataset paper's own claim.** §0b records "the sensory and motor
+periphery are largely isomorphic". That may well hold for the *anatomy*; the **traced
+connectivity** is not isomorphic, differing by ~43% at the median between sides. Those are
+compatible statements about different things, and the distinction matters for anyone using
+this data quantitatively.
 
 ### How a step is run
 

@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -89,17 +90,19 @@ def _rebuild(connectome: Connectome, pre, post, data, name: str) -> Connectome:
     else:
         weights = np.zeros((n, n), dtype=np.float32)
         np.add.at(weights, (pre, post), data)
-    return Connectome(
+    # dataclasses.replace rather than an explicit field list. A null model must differ
+    # from the real network in the ONE respect under test -- which cells are wired to
+    # which -- so everything else has to be carried through, and enumerating the fields
+    # means every new one silently defaults to None in the nulls. That is not
+    # hypothetical: `fast_weights` was added for the gap-junction latency work and an
+    # explicit list dropped it, which would have deleted the escape pathway from every
+    # shuffle and made them fail for a reason that has nothing to do with their wiring.
+    # `hemisphere` and `preferred_azimuth` matter for the same reason: without them the
+    # shuffles lose hemifield tuning and cannot express direction at all.
+    return replace(
+        connectome,
         name=name,
-        labels=connectome.labels,
         weights=weights,
-        populations=connectome.populations,
-        # Carried through deliberately. A null model must differ from the real network in
-        # the ONE respect being tested -- here, which cells are wired to which. Dropping
-        # the recorded sides would additionally disable hemifield tuning on the shuffles,
-        # so they would fail for a reason that has nothing to do with their wiring.
-        hemisphere=connectome.hemisphere,
-        param_overrides=connectome.param_overrides,
         description=f"NULL MODEL derived from {connectome.name}: {name}",
     )
 
