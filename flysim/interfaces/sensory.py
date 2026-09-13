@@ -177,7 +177,7 @@ class LoomingEncoder(BaseSensoryEncoder):
                 return theta, theta_dot
         return self._history[0][1:]
 
-    def _size_drive_pa(self, theta_rad: float) -> float:
+    def _size_drive_pa(self, theta_rad: float, theta_dot: float | None = None) -> float:
         """LPLC2's angular-size channel, in picoamps.
 
         Two candidate forms for the same published Gaussian, because the paper's equation
@@ -209,7 +209,18 @@ class LoomingEncoder(BaseSensoryEncoder):
             width = p.size_width_deg
         if width <= 0.0:
             return 0.0
-        return float(p.size_gain_pa * np.exp(-(offset * offset) / (2.0 * width * width)))
+        drive = float(p.size_gain_pa * np.exp(-(offset * offset) / (2.0 * width * width)))
+        if p.size_requires_motion:
+            # LPLC2 need looming motion to respond at all. Without this the channel reads
+            # angular size alone and a stationary object of the right size drives it
+            # forever -- see EncoderParams.size_requires_motion.
+            # The DELAYED rate, matching the delayed theta this channel reads. Using
+            # the instantaneous one would gate a 19 ms old image on a present-moment
+            # expansion, which is a different signal.
+            rate = max(float(self._theta_dot if theta_dot is None else theta_dot), 0.0)
+            ref = max(float(p.size_motion_ref_rad_s), 1e-9)
+            drive *= 1.0 - float(np.exp(-rate / ref))
+        return drive
 
     def describe_channels(self) -> str:
         return (f"  feature channels: {self._velocity_cells.size} LC4 on angular velocity, "
@@ -388,7 +399,7 @@ class LoomingEncoder(BaseSensoryEncoder):
             d_theta, d_theta_dot = self._delayed(float(obs.t), p.sensory_delay_ms)
 
             velocity_pa = p.gain_pa * max(d_theta_dot, 0.0)
-            size_pa = self._size_drive_pa(d_theta)
+            size_pa = self._size_drive_pa(d_theta, d_theta_dot)
 
             gains = self._gains
             # Only the two measured populations are driven. The remaining visual
@@ -418,7 +429,7 @@ class LoomingEncoder(BaseSensoryEncoder):
                 "drive_pa_max": float(injected.max()),
                 "size_drive_pa": (
                     self._size_drive_pa(
-                        self._delayed(float(obs.t), p.sensory_delay_ms)[0]
+                        *self._delayed(float(obs.t), p.sensory_delay_ms)
                     ) if p.split_feature_channels else 0.0
                 ),
                 "closing_ms": closing,

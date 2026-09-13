@@ -41,8 +41,22 @@ _FALLBACK_HEADING = np.array([1.0, 0.0])
 class GiantFiberDecoder(BaseMotorDecoder):
     """Watches the GF population and converts its first spike into a takeoff."""
 
-    def __init__(self, params: DecoderParams, populations: Mapping[str, np.ndarray]) -> None:
+    def __init__(self, params: DecoderParams, populations: Mapping[str, np.ndarray],
+                 hemisphere: np.ndarray | None = None,
+                 side_readout: np.ndarray | None = None) -> None:
         self._p = params
+        # Which cells' side is informative. NOT the whole trigger population: on the male
+        # CNS that population holds TTMn *and* PSI, and each giant fiber drives its own
+        # side's TTMn but BOTH PSI. The bilaterally driven PSI fires on either side at the
+        # same instant, which pins any left-right difference to exactly zero -- measured,
+        # and it hid the entire directional result once (MODEL_JOURNAL Step K1). The
+        # caller names the cells that carry side; the decoder does not guess.
+        self._side_left = np.asarray((), dtype=np.int64)
+        self._side_right = np.asarray((), dtype=np.int64)
+        if hemisphere is not None and side_readout is not None and len(side_readout):
+            sr = np.asarray(side_readout, dtype=np.int64)
+            self._side_left = sr[hemisphere[sr] < 0]
+            self._side_right = sr[hemisphere[sr] > 0]
         # The wing muscles, where the dataset has them. A brain-only connectome does not,
         # and there the escape is reported unpowered-but-scripted exactly as before --
         # the flag only ever carries information when the muscles are in the volume.
@@ -68,6 +82,9 @@ class GiantFiberDecoder(BaseMotorDecoder):
         self._last_takeoff_ms: float | None = None
         self._last_steer_ms: float | None = None
         self._flight_seen = False
+        self._lead_side = 0
+        self._last_used_side = 0
+        self.neural_heading_misses = 0
 
     @property
     def gf_spike_time_ms(self) -> float | None:
@@ -91,6 +108,14 @@ class GiantFiberDecoder(BaseMotorDecoder):
         # on a later one.
         if self._flight.size and bool(state.spikes[self._flight].any()):
             self._flight_seen = True
+
+        # Which side's jump motor neuron fires first is the directional signal. Recorded
+        # before the heading is committed, because the commit happens on the same step.
+        if self._lead_side == 0 and (self._side_left.size or self._side_right.size):
+            left_now = bool(state.spikes[self._side_left].any())
+            right_now = bool(state.spikes[self._side_right].any())
+            if left_now != right_now:
+                self._lead_side = -1 if left_now else 1
 
         if bool(state.spikes[self._trigger].any()):
             # A fresh command starts a fresh judgement about the wings, so a later escape
@@ -123,6 +148,10 @@ class GiantFiberDecoder(BaseMotorDecoder):
                     triggered_now = True
                     powered_now = self._powered()
                     self._dispatched_spike_ms = self._pending_spike_ms
+                    # Cleared after the heading has been committed and used, so a second
+                    # escape in the same episode reads its own side rather than inheriting
+                    # the first one's.
+                    self._lead_side = 0
                     self._last_takeoff_ms = state.t_ms
                     self._takeoff_count += 1
                 elif fresh and obs.escaped and self._can_steer(state.t_ms):
@@ -202,8 +231,40 @@ class GiantFiberDecoder(BaseMotorDecoder):
             return True
         return (t_ms - self._last_steer_ms) >= self._p.steer_refractory_ms
 
+    def _neural_heading(self, obs: EnvObservation) -> np.ndarray | None:
+        """Turn away from the side whose jump motor neuron fired first.
+
+        Uses only the spikes and the fly's own body axis. The threat's position is never
+        read -- which is the whole point, and also why this is coarser than the geometric
+        version: it knows a side, not a bearing.
+        """
+        if self._lead_side == 0 or obs.agent_heading is None:
+            return None
+        # Re-aim only when the threat CHANGES side. The decode is a fixed rotation away
+        # from the current body axis, so applying it again on every trigger spike during
+        # one flight turns the fly through 90 degrees over and over -- which traces a
+        # circle. Ranuja found it by driving the model: the fly could be steered into
+        # near-perfect loops. A real short-mode escape is ballistic, and nothing measured
+        # here supports re-aiming mid-flight from the same unchanged signal.
+        if self._lead_side == self._last_used_side and self._heading is not None:
+            return self._heading
+        self._last_used_side = self._lead_side
+        # Ipsilateral leads, so the leading side is the side the threat is on: turn the
+        # other way.
+        angle = float(obs.agent_heading) - self._lead_side * np.deg2rad(
+            self._p.neural_turn_deg
+        )
+        return np.array([np.cos(angle), np.sin(angle)], dtype=np.float64)
+
     def _escape_heading(self, obs: EnvObservation) -> np.ndarray:
         """Unit vector away from the threat, rotated by the escape bias."""
+        if self._p.neural_heading:
+            decoded = self._neural_heading(obs)
+            if decoded is not None:
+                return decoded
+            # No side fired yet, or the environment reports no body axis. Falling back to
+            # geometry is a silent return to the scripted behaviour, so it is counted.
+            self.neural_heading_misses += 1
         away = np.asarray(obs.agent_position, dtype=np.float64) - np.asarray(
             obs.threat_position, dtype=np.float64
         )

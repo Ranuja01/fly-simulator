@@ -328,6 +328,32 @@ class EncoderParams:
     past 83 degrees. Found by Ranuja in the telemetry, before the equation was available.
     """
 
+    size_requires_motion: bool = True
+    """Gate the size channel on the image actually expanding.
+
+    Ache et al. report that LPLC2 "though they encode looming size, require looming motion
+    to be active" -- they are radial motion opponency detectors, and a static disk does not
+    excite them. Their Gaussian in angular size was fitted to LOOMING stimuli, where size
+    and expansion co-vary; read as a function of instantaneous size alone it says a
+    stationary object of 42 degrees drives LPLC2 at full strength forever.
+
+    That is not a subtle error. Measured without this gate, a completely motionless object
+    at 25-60 degrees fires the giant fiber within ~50 ms: the fly jumps at furniture. Found
+    by Ranuja, who could steer the model into repeated escapes from a stationary pointer.
+
+    The earlier "LPLC2 is silent with nothing approaching" result is not contradicted --
+    it was measured on a distant object subtending a small angle, where the log Gaussian is
+    correctly near zero. It simply never tested a LARGE stationary object, which is the case
+    that fails. A test can be true and still cover the wrong half of the space.
+    """
+
+    size_motion_ref_rad_s: float = 0.2
+    """Expansion rate at which the size channel reaches ~63% of its ungated value.
+
+    Soft rather than a hard theta_dot > 0 test, which would chatter on noise around zero.
+    The value is invented: the paper establishes that motion is REQUIRED, not how steeply
+    the requirement turns on."""
+
     size_log_width: float = 0.52
     """Width of the log-angle Gaussian, in natural-log units. Published: C4 = 0.52.
 
@@ -511,6 +537,27 @@ class EncoderParams:
 @dataclass(frozen=True)
 class DecoderParams:
     """Giant Fiber motor decoder parameters."""
+
+    neural_heading: bool = False
+    """Decode the escape direction from the motor neurons instead of from the geometry.
+
+    Off by default, because it is strictly *less* accurate than reading the threat's
+    position -- and that is the point. The scripted heading is a unit vector straight away
+    from the threat, computed from coordinates the brain never sees. This reads which side's
+    jump motor neuron fired first and turns away from that side, using nothing but the
+    spikes and the fly's own body axis.
+
+    What it can express is therefore only a SIDE, not a bearing: the measured signal is a
+    27-36 ms lead of the ipsilateral TTMn (MODEL_JOURNAL Step K), and nothing has shown that
+    its magnitude maps linearly onto angle. Claiming a graded heading from it would be
+    inventing precision the measurement does not have.
+    """
+
+    neural_turn_deg: float = 90.0
+    """How far from the body axis to turn, away from the side that fired first.
+
+    Invented. The neurons supply the sign; this supplies the magnitude, and it is a
+    placeholder until something measured constrains it."""
 
     trigger_population: str = "GF"
     """A spike in any neuron of this population triggers escape."""

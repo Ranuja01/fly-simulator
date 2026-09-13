@@ -58,6 +58,7 @@ def build_runner(
     motion: bool = False,
     retinotopy: bool = False,
     channels: bool = False,
+    neural_heading: bool = False,
 ) -> SimulationRunner:
     """Assemble the four layers into a runnable simulation.
 
@@ -157,7 +158,26 @@ def build_runner(
                   f"falling back to GF")
         watched = "GF"
     decoder_params = replace(config.decoder, trigger_population=watched)
-    decoder = GiantFiberDecoder(decoder_params, brain.populations)
+    # Which cells carry side. TTMn only: each giant fiber drives its own side's TTMn but
+    # BOTH PSI, so including the bilaterally driven PSI pins the left-right difference to
+    # zero. See MODEL_JOURNAL Step K1, where that error hid the whole result.
+    side_readout = np.asarray(
+        [i for i in brain.populations.get(watched, ())
+         if str(connectome.labels[i]).upper().startswith("TTMN")], dtype=np.int64
+    )
+    if neural_heading:
+        decoder_params = replace(decoder_params, neural_heading=True)
+        if side_readout.size < 2:
+            print("  note: fewer than two TTMn with sides; --neural-heading cannot decode "
+                  "and will fall back to geometry")
+        else:
+            print(f"  escape direction read from {side_readout.size} TTMn, not from the "
+                  f"threat's coordinates")
+    decoder = GiantFiberDecoder(
+        decoder_params, brain.populations,
+        hemisphere=getattr(connectome, "hemisphere", None),
+        side_readout=side_readout,
+    )
 
     return SimulationRunner(environment, brain, encoder, decoder, config)
 
@@ -355,6 +375,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--postural", action="store_true",
                         help="Include the leg motor pool that aims the jump, not just the "
                              "escape reflex that fires it. Larger and slower.")
+    parser.add_argument("--neural-heading", action="store_true",
+                        help="Decode escape direction from which jump motor neuron fires "
+                             "first, instead of from the threat's coordinates. Coarser on "
+                             "purpose: the neurons supply a side, not a bearing.")
     parser.add_argument("--channels", action="store_true",
                         help="Drive LC4 on looming speed and LPLC2 on angular "
                              "size, as measured, instead of one signal for both.")
@@ -485,6 +509,7 @@ def main(argv: list[str] | None = None) -> int:
         motion=args.motion,
         retinotopy=args.retinotopy,
         channels=args.channels,
+        neural_heading=args.neural_heading,
     )
     print(runner.brain.connectome.summary())
 

@@ -81,10 +81,11 @@ write-up rather than from primary literature we have read.
 | short takeoff completes under 6.87 ms | their page | not measured | **unknown** |
 | GF-mediated takeoff threshold ~39 deg angular size | von Reyn et al. 2014 | 38.6 deg, `--channels` | **pass** |
 | GF response peaks at 42 deg angular size | Ache et al. 2019 | size channel peaks at 42 | **by construction** |
-| LPLC2 is silent with nothing approaching | inferred, not a cited measurement | 0 of 1501 frames | **pass** |
+| LPLC2 is silent with nothing approaching | inferred | 0 of 1501 frames, and silent on a LARGE static object | **pass** |
+| LPLC2 requires looming motion to respond | Ache et al. 2019 | gated on expansion; static object silent | **pass** |
 | **LC4 encodes looming SPEED; LPLC2 encodes angular SIZE** | Ache et al. 2019 | split, fitted to 2 targets | **pass** |
 | LC4:LPLC2 synapse ratio onto GF | 1.79 (Ache et al.) | 1.32 | **consistent** |
-| escape direction is away from the threat | established | scripted geometry | **not neural** |
+| escape direction is away from the threat | established | neural: 98% away, 29 deg error, `--neural-heading` | **pass, coarse** |
 | direction is set by pre-takeoff leg posture | established | absent, and out of reach | **out of scope** |
 
 **Every row names the encoder it was measured on.** A row measured with the combined
@@ -782,7 +783,7 @@ to be tuned around.
 that 95% of the model is inert and that this does not block the behavioural goal; this step
 fixes a latency inside the working wire, nothing more.
 
-### Step K, K1 and K2 run: escape direction from the neurons, not from the geometry
+### Step K, run:  escape direction from the neurons, not from the geometry
 
 The first step that moves the *behaviour* rather than the reflex. Every previous step
 improved when the fly jumps; this one is about where it goes.
@@ -928,6 +929,47 @@ so a new field is carried by default rather than silently dropped.
   it does. If the asymmetry is real biology, this model's fly is deaf on one side and the
   code is not available to it.
 
+**K3 result: the escape direction is neural, and it is much worse than the geometry it
+replaces.** `--neural-heading` reads which jump motor neuron fired first and turns away from
+that side, using the spikes and the fly's own body axis. The threat's coordinates are never
+read.
+
+Escape heading against the true away-from-threat direction (+1 straight away, 0 chance):
+
+| | takeoffs | mean dot | away from threat |
+|---|---|---|---|
+| geometric (scripted) | 8 | **1.000** | 100% *by construction* |
+| neural, raw wiring | 16 | 0.069 | 62% |
+| neural, equalised | **63** | **0.351** | **76%**, p < 0.0001 |
+
+On the equalised network over 8 bearings and 4 seeds it is **significantly better than
+chance** -- 48 of 63 takeoffs directed away, one-sided binomial p < 0.0001 -- with a **mean
+angular error of 69 degrees**. All 15 `--check` assertions still pass.
+
+**At n = 16 this was not significant** (11 of 16, p = 0.105) and the first pass nearly went
+into the journal as a pass. It took 63 takeoffs to establish. Worth remembering: "better
+than chance" is a claim with a sample size attached, and four bearings times two seeds does
+not carry it.
+
+**Why it is coarse, and why that is honest.** The measured signal is a 27-36 ms lead of the
+ipsilateral TTMn. That says which *side* the threat is on and nothing about where within
+that side, so the decode turns a fixed 90 degrees and is wrong by however far the threat sits
+from straight abeam. A graded heading could be fitted from the timing magnitude, but nothing
+has shown that magnitude maps linearly onto bearing, and fitting one would be inventing
+precision the measurement does not have. The 90 degrees is itself invented and labelled as
+such (`neural_turn_deg`).
+
+**So the trade is explicit:** mean dot falls from 1.000 to 0.351, and in exchange the
+direction stops being read from coordinates the brain cannot see. Off by default. The
+geometric heading remains the accurate one and the honest description of it is unchanged --
+it is not a model of anything.
+
+**Still conditional on the equalisation.** On the raw wiring the same decode manages 0.069
+and 62%, because the right giant fiber does not fire for right-side threats. K3 inherits the
+caveat from the asymmetry work: this is what the model does *if* the two sides are symmetric,
+which the dataset cannot rule out and cannot confirm.
+
+
 **Run it in three parts, cheap first.**
 
 **K1 — is there a usable signal at all?** Sweep the threat's starting bearing around the
@@ -1034,6 +1076,54 @@ periphery are largely isomorphic". That may well hold for the *anatomy*; the **t
 connectivity** is not isomorphic, differing by ~43% at the median between sides. Those are
 compatible statements about different things, and the distinction matters for anyone using
 this data quantitatively.
+
+**Two bugs found by driving it, and the fix more than doubled the directional accuracy.**
+Ranuja reported that the fly could be steered into near-perfect circles, and that it escaped
+from a pointer that was not moving.
+
+**1. The size channel had no motion requirement.** Ache et al. state that LPLC2 *"though
+they encode looming size, require looming motion to be active"* -- they are radial motion
+opponency detectors. Their Gaussian was fitted to LOOMING stimuli, where size and expansion
+co-vary. Read as a function of instantaneous size alone, it says a stationary object of 42
+degrees drives LPLC2 at full strength forever. Measured:
+
+| motionless object at | before | after |
+|---|---|---|
+| 25 deg | GF fires at 55 ms, 1 takeoff | **silent** |
+| 42 deg | GF fires at 46 ms, 1 takeoff | **silent** |
+| 60 deg | GF fires at 48 ms, 1 takeoff | **silent** |
+
+The fly was jumping at furniture. `size_requires_motion` gates the channel on expansion,
+softly, so it does not chatter on noise around zero. **The escape threshold is unchanged at
+38.6 degrees**, so nothing needed refitting.
+
+**This was written down in the Step F criterion and not acted on.** The exact words were:
+"our size channel is a function of instantaneous angular size alone, so a stationary disk of
+42 degrees drives it at full strength. This is a real discrepancy in its own right and must
+be recorded separately." It was recorded and then left. A known defect in a list is not a
+fixed defect, and this one took a person driving the model to surface.
+
+**It also shows how a true test can cover the wrong half of the space.** The scorecard row
+"LPLC2 is silent with nothing approaching" passed -- 0 of 1,501 frames -- but it was measured
+on a *distant* object subtending a small angle, where the log Gaussian is correctly near
+zero. It never tested a LARGE stationary object, which is the case that failed.
+
+**2. The neural heading re-aimed on every spike, which traces a circle.** The decode turns a
+fixed 90 degrees from the *current* body axis. TTMn keeps firing through a flight, so the
+rotation was reapplied again and again -- and repeatedly rotating a heading by a constant
+angle is a circle. It now re-aims only when the threat changes **side**. A short-mode escape
+is ballistic, and nothing measured here supports re-aiming mid-flight from an unchanged
+signal.
+
+**Effect of the two together**, 8 bearings x 4 seeds on the equalised network:
+
+| | takeoffs | mean dot | away from threat | mean error |
+|---|---|---|---|---|
+| before | 63 | 0.351 | 76% | 69 deg |
+| **after** | **59** | **0.878** | **98%** | **29 deg** |
+
+All 15 `--check` assertions still pass. The remaining 29 degrees is the honest floor of a
+side-only decode: the neurons say which side, not where within it.
 
 ### How a step is run
 
