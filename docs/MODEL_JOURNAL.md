@@ -79,7 +79,7 @@ write-up rather than from primary literature we have read.
 | TTM fires 0.93 ms after the giant fiber | von Reyn et al. | 0.90 ms | **pass** |
 | DLM fires 1.44 ms after the giant fiber | von Reyn et al. | 1.80 ms | **pass** |
 | short takeoff completes under 6.87 ms | their page | not measured | **unknown** |
-| GF-mediated takeoff threshold ~39 deg angular size | von Reyn et al. 2014 | 40.8 deg, `--channels` | **pass** |
+| GF-mediated takeoff threshold ~39 deg angular size | von Reyn et al. 2014 | 38.6 deg, `--channels` | **pass** |
 | GF response peaks at 42 deg angular size | Ache et al. 2019 | size channel peaks at 42 | **by construction** |
 | LPLC2 is silent with nothing approaching | inferred, not a cited measurement | 0 of 1501 frames | **pass** |
 | **LC4 encodes looming SPEED; LPLC2 encodes angular SIZE** | Ache et al. 2019 | split, fitted to 2 targets | **pass** |
@@ -781,6 +781,163 @@ to be tuned around.
 **Not in scope for this step.** Making the rest of the network conduct. Step I established
 that 95% of the model is inert and that this does not block the behavioural goal; this step
 fixes a latency inside the working wire, nothing more.
+
+### Step K, K1 and part of K2 run: escape direction from the neurons, not from the geometry
+
+The first step that moves the *behaviour* rather than the reflex. Every previous step
+improved when the fly jumps; this one is about where it goes.
+
+**What happens today.** `GiantFiberDecoder._escape_heading` reads `obs.threat_position` and
+`obs.agent_position` and returns the unit vector between them. The decoder — whose job is
+to read brain state — is reading the world. The heading is geometry wearing a decoder's
+coat, and the scorecard has said so all along: *escape direction is away from the threat,
+**not neural***.
+
+**What is available instead.** The motor output carries sides: 2 giant fibers (DNp01 left
+and right), 2 TTMn (left and right), 2 PSI, and 11 DLMn split across both. So a left/right
+balance — spike counts, or first-spike times — can be read from the muscles the model
+already drives.
+
+**K1 result: there is a bearing-dependent signal at the jump muscle, and it is the wrong
+shape.** TTMn first-spike time, left minus right, three seeds per bearing:
+
+| threat bearing | retinotopy ON | retinotopy OFF (control) |
+|---|---|---|
+| 45 deg (right) | **-958.7 +/- 651.6 ms** | -26.7 +/- 10.0 ms |
+| 135 deg (LEFT) | +9.3 +/- 9.4 ms | -20.0 +/- 8.6 ms |
+| 225 deg (LEFT) | +1.3 +/- 10.0 ms | -22.7 +/- 6.8 ms |
+| 315 deg (right) | **-938.7 +/- 625.6 ms** | -28.0 +/- 8.6 ms |
+
+**The control behaves exactly as it must.** With hemifield tuning off there is no azimuth in
+the input, and the left-right difference becomes a **constant ~-25 ms at every bearing** --
+a fixed wiring asymmetry, with no bearing dependence whatever. That is the control §2a's
+retracted result never had, and it works.
+
+**But the ON signal is not a directional code.** A graded ipsilateral-earlier response would
+show a smooth swing with bearing. What we have is nearly binary and one-sided: for
+**right-side** threats the right TTMn does not fire during the approach at all -- its 2,720
+and 2,820 ms times are a *later* encounter, after the first escape -- while left-side threats
+fire both sides within ~5 ms of each other. The effect is real and it is bearing-dependent,
+but it reads as **one side failing** rather than as the two sides being differently timed,
+and it is lopsided in a way no symmetry argument predicts. This is very likely the same
+**34% left/right convergence asymmetry** already recorded as uncorroborated (§ open items),
+now showing up behaviourally.
+
+**A measurement error, caught.** The first pass read the `MOTOR` population and reported a
+difference of exactly 0.00 ms at every bearing. `MOTOR` contains TTMn *and* PSI, and the
+wiring shows why that matters: each giant fiber drives only its **own** side's TTMn, but
+**both** PSI. The bilaterally-driven PSI fires on either side at the same instant and pins
+the difference to zero. Reading the population instead of the cell type hid the entire
+result. The pre-measurement list did not anticipate this, and should have: *check whether
+the population you are reading mixes side-specific with bilateral cells.*
+
+**K2 is now the decisive test and is not yet run.** The signal exists; whether the *wiring*
+produces it is unanswered, because hemifield tuning is what puts azimuth into the drive in
+the first place. Until a type-preserving shuffle is compared against this, the honest
+statement is that our encoder's tuning reaches the jump muscle -- not that the fly's
+connectome computes direction.
+
+**K2, and it answers a different question than the one it was written for.** Before running
+the shuffle, the convergence onto each giant fiber was measured:
+
+| giant fiber | drive from left eye | from right eye | total |
+|---|---|---|---|
+| DNp01 **left** | 12.84 | 0.00 | **12.84** |
+| DNp01 **right** | 0.01 | 9.56 | **9.56** |
+
+Visual input is **perfectly ipsilateral**, with no crossover — and the two sides differ by
+**34%**. That is the asymmetry already sitting in the open items as uncorroborated. It is
+identical under the split and combined encoders (9.56 against 9.58), so the split did not
+cause it.
+
+**Equalising the two giant fibers changes everything.** Scaling the right one's incoming
+weight by 12.84/9.56 and repeating the bearing sweep:
+
+| bearing | as measured | giant fibers equalised |
+|---|---|---|
+| 45 deg (right) | -958.7 +/- 651.6 ms | **-26.7 +/- 5.0 ms** |
+| 135 deg (LEFT) | +9.3 +/- 9.4 ms | **+33.3 +/- 1.9 ms** |
+| 225 deg (LEFT) | +1.3 +/- 10.0 ms | **+34.7 +/- 3.8 ms** |
+| 315 deg (right) | -938.7 +/- 625.6 ms | **-36.0 +/- 5.7 ms** |
+
+That is a clean, graded, bilateral directional code: **the ipsilateral jump muscle fires
+27-36 ms earlier, the sign flips correctly with side, and the spread collapses from +/-650
+ms to +/-2-6 ms.**
+
+**So K1's signal was the asymmetry masking the code, not the code itself.** The -958 ms
+"direction" was the right giant fiber failing to fire during the approach, because it
+receives 34% less drive and the current calibration puts it below threshold where the left
+one is above. Remove the asymmetry and the real signal is underneath, and it is far better
+than the one it was hiding. This also restores the earlier result -- "both giant fibers fire
+earlier for a threat on their own side" (§ above) -- which the new calibration had appeared
+to overturn.
+
+**Is the 34% real?** Two reasons to doubt it. The dataset has 42% postsynaptic completion
+and only 40.1% of synapses with both partners proofread, so a hemispheric difference in
+traced convergence is very plausibly proofreading depth. And the dataset paper states that
+**"the sensory and motor periphery are largely isomorphic"** (§0b) -- which argues against a
+genuine 34% asymmetry in exactly this pathway. Neither settles it, and the paper offers no
+left-right comparison to check against.
+
+**What must NOT happen next.** Equalising the giant fibers is an intervention run to test a
+hypothesis, and it worked as one. Adopting it as a model default would be a fitted
+correction applied to measured anatomy to make a result appear -- precisely what §1 forbids.
+If it is adopted it must be as a **declared, switchable hypothesis about reconstruction
+completeness**, with the raw asymmetry still reachable, and with the shuffle control run
+against both. The shuffle that K2 was written to run has still not been run.
+
+**Run it in three parts, cheap first.**
+
+**K1 — is there a usable signal at all?** Sweep the threat's starting bearing around the
+fly and measure, at the motor neurons, the left-right difference in first-spike time and in
+spike count. *Done-criterion:* the difference must separate ipsilateral from contralateral
+threats by more than the trial-to-trial spread across seeds. If it does not, the rest is
+moot and that is the result.
+
+**K2 — is it the wiring, or is it our own encoder handed back?** This is the whole
+experiment. Directional information only exists in this model because `--retinotopy`
+scales each cell's drive by how near the threat is to its eye — **we put the azimuth in**.
+Reading azimuth back out of the motor neurons and calling it neural direction would be
+circular. *Done-criterion:* the K1 signal must be **larger on the real connectome than on a
+type-preserving shuffle given the same tuning budget** (`tools/shuffle_control.py`,
+`tools/direction_control.py`). If the shuffle does as well, the wiring contributes nothing
+and the honest report is that the encoder's tuning survives transit — which is not a
+finding about the fly.
+
+**K3 — use it.** Replace the geometric heading with one decoded from the motor balance.
+*Done-criterion:* escapes still go away from the threat more often than chance, and
+`--check`'s existing assertions still pass.
+
+**What could make the measurement lie**, written before measuring:
+
+* **This exact experiment has already produced one retracted result.** §2a: a +128 ms
+  front/rear difference that was a start-up teleport artefact, and which persisted with
+  retinotopy *off* — the tell that it was not neural at all. **Reuse the warm-up in the
+  existing tools; do not rebuild the harness.** Any new harness must be checked with
+  retinotopy off, where the answer must be *no signal*.
+* **The polarity of the retinotopic map is undetermined** (§4). We may recover direction
+  with the sign inverted. K1 and K2 ask whether left and right are *distinguishable*;
+  which is which is a separate unresolved question and must not be quietly fixed by
+  flipping a constant until the plot looks right.
+* **n = 2 per side, and the left GF is bimodal.** Measured previously: 1104, 968, 1112,
+  1104, 964 ms on repeated left threats. A mean over such a distribution is not a
+  measurement. Report the spread, and compare each cell against *itself* across conditions
+  rather than left against right — the earlier "one-sided response" was an artefact of the
+  latter.
+* **Only ~26 cells downstream of the injection conduct** (Step I). The directional signal
+  has to survive a very thin path, and there is no population averaging to smooth it.
+* **A weak signal here may be biologically correct.** The GF drives the *short-mode*
+  takeoff, which is the fast stereotyped one; directed escape is associated with the
+  long-mode sequence and with pre-takeoff leg posture, which this model does not have. A
+  null result at K1 should be read as "the GF pathway is not where direction lives",
+  not as "the model failed".
+* **`escape_bias_deg` already rotates the heading.** If it is non-zero, a decoded heading
+  will be compared against a target that is itself offset. Zero it for the comparison or
+  account for it explicitly.
+
+**Out of scope for this step.** Pre-takeoff leg posture, which the scorecard marks out of
+reach and which is where the animal's directional control mostly lives. K3 replaces a
+geometric constant with a neural readout; it does not claim to reproduce how a fly aims.
 
 ### How a step is run
 
