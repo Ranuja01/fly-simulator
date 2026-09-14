@@ -85,7 +85,8 @@ write-up rather than from primary literature we have read.
 | LPLC2 requires looming motion to respond | Ache et al. 2019 | gated on expansion; static object silent | **pass** |
 | **LC4 encodes looming SPEED; LPLC2 encodes angular SIZE** | Ache et al. 2019 | split, fitted to 2 targets | **pass** |
 | LC4:LPLC2 synapse ratio onto GF | 1.79 (Ache et al.) | 1.32 | **consistent** |
-| escape direction is away from the threat | established | neural: 98% away, 29 deg error, `--neural-heading` | **pass, coarse** |
+| escape direction is away from the threat | established | neural, equalised: 16/16 away, mean dot 0.88; raw wiring 9/11, 0.59 (`--neural-heading`) | **pass, coarse; weak on raw** |
+| same-side jump muscle leads the escape | anatomy is ipsilateral | 15/16 on equalised wiring, after the mirror fix | **pass** |
 | direction is set by pre-takeoff leg posture | established | absent, and out of reach | **out of scope** |
 
 **Every row names the encoder it was measured on.** A row measured with the combined
@@ -783,7 +784,10 @@ to be tuned around.
 that 95% of the model is inert and that this does not block the behavioural goal; this step
 fixes a latency inside the working wire, nothing more.
 
-### Step K, run:  escape direction from the neurons, not from the geometry
+### Step K, run: escape direction from the neurons, not from the geometry
+
+> **CORRECTION — sides inverted.** Every statement below about *which* side leads or fails describes a model whose eyes were mirrored; that a left/right flip exists still stands. See "The eyes were mirrored, and the decoder was cancelling it".
+
 
 The first step that moves the *behaviour* rather than the reflex. Every previous step
 improved when the fly jumps; this one is about where it goes.
@@ -1124,6 +1128,146 @@ signal.
 
 All 15 `--check` assertions still pass. The remaining 29 degrees is the honest floor of a
 side-only decode: the neurons say which side, not where within it.
+
+### The mid-flight circles: reproduced, attributed, and needing both bugs at once
+
+Ranuja reported the fly flying in tight circles mid-flight after taking their hand off the
+mouse. **My first test said there was nothing to find, and it was measuring the wrong thing.**
+It parked the pointer from the start with a 20 mm object and counted *takeoffs*. The circles
+happen after a moving pointer *stops* during a flight, and they show up in the flight path,
+not in how many takeoffs there are. Same shape as every earlier error (§6b): a property of
+the test setup reported as a property of the system.
+
+**The screenshots were from before the fixes.** Both images show `GF: FIRED at 1152.8 ms`,
+which matches the `gf_first_spike_ms` of the run Ranuja pasted before commit `4b6c74c`. The
+escape counts in the images (1 at t = 5.16 s, 2 at t = 19.66 s) also match that run's
+takeoffs at 1.16 s and 6.83 s. That explains why the current code did not reproduce the
+circles, but it does not show that the fixes removed them. The pre-fix behaviour had to be
+reproduced directly.
+
+**2x2, with Ranuja's 75 mm object.** The pointer sweeps in, freezes at takeoff, then 4 s of
+flight are recorded. A circle needs more than the 0.85 s powered-flight duration aloft and
+more than 360 degrees of turning.
+
+| re-aim logic | motion gate | redirects | aloft | total turn |
+|---|---|---|---|---|
+| held per flight (current) | on (current) | 0-2 | 1.2-1.3 s | 0-90 deg |
+| held per flight | **off** | 0-3 | 1.2-1.4 s | 0-90 deg |
+| **every spike (old)** | on | 0-2 | 1.2-1.3 s | 0-162 deg |
+| **every spike (old)** | **off** | **42** | **4.00 s** | **2,700 deg -- circling** |
+
+**It is an interaction, not one bug.** Neither defect alone circles:
+
+* **Gate off:** a large motionless object keeps driving LPLC2, so the giant fiber keeps
+  spiking and redirects keep arriving. Each redirect calls `EscapeFlight.steer`, which
+  **re-powers** the flight. The fly never lands.
+* **Old re-aim:** each of those redirects commanded the current heading plus or minus 90
+  degrees, so the fly was always turning at the 900 deg/s cap. At the 0.62 m/s cruise speed
+  that is a circle of radius 0.62 / 15.7 = **~40 mm**, which matches the loops in the images.
+
+Gate off alone gives redirects with a held target, so the fly converges and does not circle.
+Old re-aim alone gives a rotating target but no stream of redirects once the pointer stops.
+Together, 42 redirects over 4 s give 2,700 degrees, about seven and a half loops.
+
+**It depends on geometry.** Only one of three approach bearings reproduced it under the old
+logic; the other two produced no redirects after the freeze. The fly has to be left close to
+the frozen object for the static drive to keep firing. That is the "perfect distance" in
+Ranuja's report, and it is why the circles appeared only sometimes.
+
+**Limits of the result.** One seed and three bearings. That is enough to confirm the
+mechanism, because the prediction picked out exactly one cell of the 2x2 and that cell
+reproduced it, but not enough to measure how often it happens. The current code shows no
+circling in any cell.
+
+### The eyes were mirrored, and the decoder was cancelling it
+
+Found during the verification pass before committing the circle checks. No test failed. A
+number just didn't fit: after the two circle fixes, neural heading accuracy on raw wiring had
+jumped from 0.069 to 0.735. Working out why led somewhere else.
+
+**The model disagreed with its own anatomy.** Measured in the fly's body frame, where the
+fly's left is counter-clockwise from its heading because arena angles run that way, the jump
+motor neuron **opposite** the threat fired first in 14 of 15 escapes on equalised wiring. The
+pathway is measured ipsilateral at every stage (eye to giant fiber, giant fiber to TTMn). An
+ipsilateral circuit cannot produce a contralateral result unless something upstream is
+mirrored.
+
+**Proven directly, with no simulation.** Hemifield weights for a threat placed on the fly's
+left:
+
+| fly heading | threat | left eye | right eye |
+|---|---|---|---|
+| 0 deg | on the fly's left | 0.40 | **1.60** |
+| 90 deg | on the fly's left | 0.40 | **1.60** |
+
+The encoder computed `bearing = world - heading`. In this arena that is positive to the
+fly's **left**. Its comment, and both eye-preference conventions it feeds (the default
++/-90 degrees and `neuprint_source._preferred_azimuth`), assume positive means **right**. So
+each eye was tuned to the opposite side of the arena, for as long as hemifield tuning has
+existed. The dashboard does not flip the arena axes, so the mirror was real in what was
+displayed as well.
+
+**Why nothing caught it.** The neural heading's turn, `heading - side * 90`, was written to
+match what the data showed. It turned the fly toward the leading side, and because the
+mirror made the opposite jump muscle lead, that pointed the fly away from the threat.
+**The escape went the right way because two errors cancelled.** The older world-frame
+tables hid it as well: `tools/direction_control.py` forces the heading to 0, so its "threat
+RIGHT" at +90 degrees was on the fly's left, and "the right giant fiber leads for a
+right-side threat" was the mirror read through a mislabel.
+
+**What survives and what does not.**
+
+* **Survives:** every result that a left/right **flip exists**, including K1/K2's
+  bearing-dependent code and "the type-preserving shuffle destroys it". A mirror preserves a
+  flip. Every anatomical statement also survives: perfectly ipsilateral input, the 34%
+  convergence difference, the dataset-wide asymmetry analysis.
+* **Inverted:** every behavioural statement about **which side** leads or fails. That covers
+  "the ipsilateral TTMn leads" in Step K and `config.py`, "both giant fibers fire earlier
+  for a threat on their own side", and "the right giant fiber does not fire for right-side
+  threats". Read these as describing the mirrored model. The corrected model's sides are
+  below.
+
+**The fix is two signs, changed together.** The encoder now negates the bearing into the
+"positive = right" convention, and the decoder turns away from the leading side
+(`heading + side * 90`). Either change alone sends the fly at the threat.
+
+| measured after the fix | before | after |
+|---|---|---|
+| same-side TTMn fires first, equalised wiring | 1 of 15 | **15 of 16** |
+| neural heading, equalised: mean dot, away | 0.875, 15/15 | **0.884, 16/16** |
+| neural heading, raw wiring: mean dot, away | 0.735, 14/16 | **0.590, 9/11** |
+| escape threshold with `--retinotopy` (median of 4 seeds) | 43.2 deg, range 33-53 | **34.9 deg, range 33-35** |
+
+**The raw-wiring drop is the asymmetry acting on the correct side.** The right giant fiber
+receives 34% less visual input. With correct sides, right-side threats go through it, it
+often loses the race to the left giant fiber (5 of 9 right threats led on the correct side),
+and the decoder then turns the fly toward the threat. Before the fix the weak side handled
+left threats instead, so the model's one-sidedness was on the wrong side. The sample is 11
+escapes.
+
+**The retinotopy threshold is now 1.1 degrees below the 39 +/- 3 band.** The calibration was
+always documented as fitted with hemifield tuning off (38.6 deg; unaffected by this change),
+so this breaks no claim. But it is what the interactive `--retinotopy` session shows, and it
+has moved from outside the band on the high side to outside it on the low side.
+
+**Guarded now, and the guards were shown to fail.** `--check` gained three sections, each
+built on the configuration people actually run rather than the default one:
+
+* a motionless object at 42 degrees does not trigger the reflex (`--channels`);
+* a pointer frozen beside a flying fly does not make it circle (`--neural-heading`);
+* a threat on the fly's left drives its left eye, and a left jump muscle leading turns the
+  fly right. These are tested as geometry, with no connectome, so behaviour that looks
+  correct cannot hide a compensating pair of errors from them.
+
+Each check was mutation-tested. Motion gate off fails only the motionless-object check. Gate
+off plus the old re-aim fails both the object and circle checks (3,280 deg of turning).
+Reinstating the old encoder sign fails only the two eye checks. Reinstating the old decoder
+sign fails only the turn check. All pass on neuprint; mock12, synthetic120 and FlyWire skip
+the checks they cannot run, out loud.
+
+**The remaining assumption** is that the dataset's `side == "R"` means the fly's own right
+(`neuprint_source.py:593`). That is the standard neuPrint convention, but it is taken on
+trust rather than checked here.
 
 ### How a step is run
 
@@ -1504,6 +1648,9 @@ and that bistability scrambles the between-GF difference. Comparing each cell ag
 |---|---|---|---|
 | right GF | **1038** | 1088 | 50 ms earlier |
 | left GF | 1120 | **~1035** | ~85 ms earlier |
+
+
+> **CORRECTION — sides inverted.** Every statement below about *which* side leads or fails describes a model whose eyes were mirrored; that a left/right flip exists still stands. See "The eyes were mirrored, and the decoder was cancelling it".
 
 Both Giant Fibers fire earlier for a threat on their own side. The directional response is
 bilateral. Using a between-cell difference as the metric, when one cell is bistable, hid it

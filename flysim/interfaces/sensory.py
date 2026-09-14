@@ -254,9 +254,23 @@ class LoomingEncoder(BaseSensoryEncoder):
         if offset.size < 2 or not np.any(offset):
             return np.ones(self._target.size, dtype=np.float32)
 
-        # Threat bearing in the fly's own frame: 0 straight ahead, +pi/2 to its right.
+        # Threat bearing in the fly's own frame: 0 straight ahead, POSITIVE TO ITS RIGHT --
+        # the convention the eye preferences below and neuprint_source._preferred_azimuth
+        # both use. The arena's angles run counter-clockwise (the fly moves along
+        # (cos h, sin h)), so `world - heading` is positive to the fly's LEFT and has to be
+        # negated to reach it.
+        #
+        # It was not negated, for as long as hemifield tuning existed. Every eye was tuned to
+        # the opposite side of the arena: a threat on the fly's left drove its right eye
+        # 1.6x and its left eye 0.4x. Behaviour still looked right, because the neural
+        # heading's turn sign had been matched to the mirrored data, so the two errors
+        # cancelled. Found when a body-frame measurement showed the jump muscle OPPOSITE
+        # the threat firing first in 14 of 15 escapes -- impossible for a pathway measured
+        # ipsilateral at every stage. Every result that a left/right flip EXISTS survives
+        # (a mirror preserves a flip); every statement of WHICH side leads was inverted.
+        # See MODEL_JOURNAL, "The eyes were mirrored".
         world = float(np.arctan2(offset[1], offset[0]))
-        bearing = world - float(obs.agent_heading)
+        bearing = float(obs.agent_heading) - world
 
         side = self._hemisphere[self._target]
         # Straight out to the side, unless the anatomy says otherwise for this cell.

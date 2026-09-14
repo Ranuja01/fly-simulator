@@ -249,9 +249,16 @@ class GiantFiberDecoder(BaseMotorDecoder):
         if self._lead_side == self._last_used_side and self._heading is not None:
             return self._heading
         self._last_used_side = self._lead_side
-        # Ipsilateral leads, so the leading side is the side the threat is on: turn the
-        # other way.
-        angle = float(obs.agent_heading) - self._lead_side * np.deg2rad(
+        # The same-side jump motor neuron leads, so the leading side is the side the threat
+        # is on: turn the other way. Arena angles run counter-clockwise, so a turn to the
+        # RIGHT is negative -- left leading (-1) must give heading - 90 degrees.
+        #
+        # This read `heading - side * turn` until the encoder's eyes were found mirrored.
+        # That sign turned the fly TOWARD the leading side, which only pointed it away from
+        # the threat because the mirrored encoder made the OPPOSITE jump muscle lead. The two
+        # errors cancelled; fixing either alone sends the fly at the threat. They change
+        # together, and --check now guards both.
+        angle = float(obs.agent_heading) + self._lead_side * np.deg2rad(
             self._p.neural_turn_deg
         )
         return np.array([np.cos(angle), np.sin(angle)], dtype=np.float64)

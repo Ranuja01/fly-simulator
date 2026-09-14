@@ -548,7 +548,9 @@ class DecoderParams:
     spikes and the fly's own body axis.
 
     What it can express is therefore only a SIDE, not a bearing: the measured signal is a
-    27-36 ms lead of the ipsilateral TTMn (MODEL_JOURNAL Step K), and nothing has shown that
+    27-36 ms lead of the same-side TTMn on equalised wiring (MODEL_JOURNAL Step K, and "The
+    eyes were mirrored" -- until that fix the model ran with the OPPOSITE side leading, and
+    this line said ipsilateral anyway), and nothing has shown that
     its magnitude maps linearly onto angle. Claiming a graded heading from it would be
     inventing precision the measurement does not have.
     """

@@ -348,6 +348,119 @@ def run_check(config: SimConfig, connectome_kwargs: dict | None = None) -> int:
     require(slow_summary["first_spike_ms"]["GF"] is None,
             "a slow approach does not trigger the reflex")
 
+    # The two checks below exist because both bugs they guard against got past every check
+    # above -- and they got past for the same reason: everything above builds the DEFAULT
+    # configuration (combined encoder, no channels, no neural heading), while the bugs lived
+    # in the configuration people actually run. A check has to exercise the path it claims
+    # to protect, so these build `--channels --retinotopy [--neural-heading]` explicitly.
+    # On a connectome where that path cannot exist they SKIP out loud rather than vanish:
+    # a check that can disappear without failing is worse than no check.
+
+    print("\n=== a large MOTIONLESS object must NOT trigger the reflex (--channels) ===")
+    # 42 degrees is the peak of the LPLC2 size Gaussian: the most a stationary object can
+    # drive the size channel. Without the motion gate this fired the giant fiber within
+    # 46 ms -- the fly jumped at furniture (MODEL_JOURNAL, Step K).
+    size_m = 0.020
+    still = config.with_overrides(env={
+        "predator_speed_ms": 0.0, "duration_s": 3.0, "threat_size_m": size_m,
+        "predator_start_distance_m": size_m / (2.0 * np.tan(np.deg2rad(42.0) / 2.0)),
+    })
+    still_runner = build_runner(still, connectome_kwargs=connectome_kwargs,
+                                channels=True, retinotopy=True)
+    size_cells = getattr(getattr(still_runner, "encoder", None), "_size_cells", ())
+    if len(size_cells) == 0:
+        print("  [skip] no LPLC2 cells in this connectome, so there is no size channel to test")
+    else:
+        still_runner.run()
+        still_summary = still_runner.summary()
+        require(still_summary["first_spike_ms"]["GF"] is None
+                and still_summary["takeoffs"] == 0,
+                f"a motionless object at 42 deg does not trigger the reflex "
+                f"({still_summary['takeoffs']} takeoffs)")
+
+    print("\n=== a pointer frozen beside a flying fly must NOT make it circle "
+          "(--neural-heading) ===")
+    # Reproduces the report: pointer sweeps in, the fly takes off, the hand comes off the
+    # mouse mid-flight with a large object left close by. With the motion gate off AND the
+    # heading re-aimed on every spike, this gave 42 redirects, a flight that never landed,
+    # and 2,700 degrees of turning. Each bug alone did not circle, so this is what catches
+    # the interaction. A circle means more than one full turn while the pointer is still.
+    circ = config.with_overrides(runner={"brain_dt_ms": INTERACTIVE_BRAIN_DT_MS})
+    circ_runner = build_runner(circ, connectome_kwargs=connectome_kwargs,
+                               interactive=True, channels=True, retinotopy=True,
+                               neural_heading=True)
+    dec = circ_runner.decoder
+    if (len(getattr(dec, "_side_left", ())) == 0
+            or len(getattr(dec, "_side_right", ())) == 0):
+        print("  [skip] no left and right TTMn in this connectome, so the neural heading "
+              "has nothing to decode")
+    else:
+        env = circ_runner.env
+        env._threat_size = 0.075
+        dt = circ_runner.frame_dt_s
+        pos = np.array([0.30, 0.0])
+        for _ in range(60):          # warm-up; see MODEL_JOURNAL 2a for why
+            env.set_threat_position(*pos)
+            circ_runner.step()
+        took_off = False
+        for _ in range(3000):
+            toward = np.asarray(env._fly_pos, dtype=float) - pos
+            dist = float(np.linalg.norm(toward))
+            if dist > 1e-6:
+                pos = pos + toward / dist * 0.6 * dt
+            env.set_threat_position(*pos)
+            result = circ_runner.step()
+            if result.command is not None and result.command.triggered_now:
+                took_off = True
+                break
+        # Without a takeoff the circle check below would pass vacuously, so the
+        # precondition is a requirement in its own right.
+        require(took_off, "the sweeping pointer triggers a takeoff (precondition)")
+        if took_off:
+            turn, prev = 0.0, None
+            for _ in range(int(4.0 / dt)):
+                env.set_threat_position(*pos)
+                obs = circ_runner.step().observation
+                heading = obs.agent_heading
+                if obs.escaped and prev is not None and heading is not None:
+                    turn += abs((heading - prev + np.pi) % (2.0 * np.pi) - np.pi)
+                prev = heading
+            require(np.rad2deg(turn) < 360.0,
+                    f"with the pointer frozen the fly does not circle "
+                    f"({np.rad2deg(turn):.0f} deg of turning in 4 s)")
+
+    print("\n=== sides: a threat on the fly's LEFT drives its LEFT eye, and it turns RIGHT ===")
+    # The eyes were mirrored for as long as hemifield tuning existed, and nothing caught it,
+    # because the decoder's turn sign had been matched to the mirrored data: behaviour
+    # looked right while every "which side" statement was inverted. So these check the two
+    # halves SEPARATELY, as geometry, with no connectome and no simulation -- an escape that
+    # still goes the right way cannot hide a compensating pair of errors from them.
+    #
+    # Arena angles run counter-clockwise, so the fly's left is +90 degrees from its heading.
+    eye_encoder = LoomingEncoder(
+        replace(config.encoder, hemifield_tuning=1.0), {"LC4": np.array([0, 1])}, 2,
+        hemisphere=np.array([-1, 1]), preferred_azimuth=None,
+        labels=["LC4:left", "LC4:right"],
+    )
+    base_obs = Predator2DEnvironment(config.env).reset()
+    for heading_deg in (0.0, 90.0):
+        h = np.deg2rad(heading_deg)
+        left_of_fly = 0.1 * np.array([np.cos(h + np.pi / 2), np.sin(h + np.pi / 2)])
+        w = eye_encoder._hemifield_weights(replace(
+            base_obs, agent_position=np.zeros(2), agent_heading=h,
+            threat_position=left_of_fly))
+        require(float(w[0]) > float(w[1]),
+                f"heading {heading_deg:.0f} deg: threat on the fly's left drives the LEFT "
+                f"eye (left {float(w[0]):.2f}, right {float(w[1]):.2f})")
+
+    side_decoder = GiantFiberDecoder(replace(config.decoder, neural_heading=True),
+                                     {"GF": np.array([0])})
+    side_decoder._lead_side = -1       # the LEFT jump motor neuron fired first
+    turned = side_decoder._neural_heading(replace(base_obs, agent_heading=0.0))
+    require(turned is not None and float(turned[1]) < 0.0,
+            "left jump motor neuron first (threat on the left) turns the fly RIGHT "
+            f"(heading vector {None if turned is None else np.round(turned, 2).tolist()})")
+
     print()
     if failures:
         print(f"FAILED: {len(failures)} check(s) did not pass.")
