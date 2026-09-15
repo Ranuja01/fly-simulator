@@ -455,11 +455,68 @@ def run_check(config: SimConfig, connectome_kwargs: dict | None = None) -> int:
 
     side_decoder = GiantFiberDecoder(replace(config.decoder, neural_heading=True),
                                      {"GF": np.array([0])})
-    side_decoder._lead_side = -1       # the LEFT jump motor neuron fired first
+    side_decoder._side_score = -1.0    # recent evidence: the LEFT jump motor neuron led
     turned = side_decoder._neural_heading(replace(base_obs, agent_heading=0.0))
     require(turned is not None and float(turned[1]) < 0.0,
             "left jump motor neuron first (threat on the left) turns the fly RIGHT "
             f"(heading vector {None if turned is None else np.round(turned, 2).tolist()})")
+
+    print("\n=== chased mid-flight, the fly must RE-AIM (--neural-heading) ===")
+    # The circle fix froze the neural heading for the whole flight: the side reading was only
+    # cleared at takeoff, and a hold rule then returned the takeoff heading. Chased at 1.0 m/s,
+    # 2-3 redirects all sent ONE heading and the fly turned 0 degrees -- Ranuja: "if I come at
+    # it, it never cares". The circle check above passed throughout, because a fly that never
+    # turns never circles. This is its counterpart: responsiveness, not just stability.
+    chase_cfg = config.with_overrides(runner={"brain_dt_ms": INTERACTIVE_BRAIN_DT_MS})
+    chase_runner = build_runner(chase_cfg, connectome_kwargs=connectome_kwargs,
+                                interactive=True, channels=True, retinotopy=True,
+                                neural_heading=True)
+    chase_dec = chase_runner.decoder
+    if (len(getattr(chase_dec, "_side_left", ())) == 0
+            or len(getattr(chase_dec, "_side_right", ())) == 0):
+        print("  [skip] no left and right TTMn in this connectome, so the neural heading "
+              "has nothing to decode")
+    else:
+        env = chase_runner.env
+        dt = chase_runner.frame_dt_s
+        pos = np.array([0.30, 0.0])
+        for _ in range(60):          # warm-up; see MODEL_JOURNAL 2a
+            env.set_threat_position(*pos)
+            chase_runner.step()
+        took_off = False
+        for _ in range(3000):
+            toward = np.asarray(env._fly_pos, dtype=float) - pos
+            dist = float(np.linalg.norm(toward))
+            if dist > 1e-6:
+                pos = pos + toward / dist * 0.6 * dt
+            env.set_threat_position(*pos)
+            result = chase_runner.step()
+            if result.command is not None and result.command.triggered_now:
+                took_off = True
+                break
+        require(took_off, "the sweeping pointer triggers a takeoff (precondition)")
+        if took_off:
+            for _ in range(int(0.3 / dt)):
+                env.set_threat_position(*pos)
+                chase_runner.step()
+            sent, turn, prev = set(), 0.0, None
+            for _ in range(int(2.0 / dt)):
+                toward = np.asarray(env._fly_pos, dtype=float) - pos
+                dist = float(np.linalg.norm(toward))
+                if dist > 1e-6:
+                    pos = pos + toward / dist * 1.0 * dt
+                env.set_threat_position(*pos)
+                result = chase_runner.step()
+                obs = result.observation
+                cmd = result.command
+                if cmd is not None and cmd.redirect and cmd.heading is not None:
+                    sent.add(int(round(np.rad2deg(np.arctan2(cmd.heading[1], cmd.heading[0])))))
+                if obs.escaped and prev is not None and obs.agent_heading is not None:
+                    turn += abs((obs.agent_heading - prev + np.pi) % (2.0 * np.pi) - np.pi)
+                prev = obs.agent_heading
+            require(len(sent) >= 2 and np.rad2deg(turn) >= 90.0,
+                    f"chased mid-flight the fly re-aims ({len(sent)} distinct redirect "
+                    f"headings, {np.rad2deg(turn):.0f} deg turned)")
 
     print()
     if failures:

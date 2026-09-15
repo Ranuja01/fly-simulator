@@ -85,7 +85,7 @@ write-up rather than from primary literature we have read.
 | LPLC2 requires looming motion to respond | Ache et al. 2019 | gated on expansion; static object silent | **pass** |
 | **LC4 encodes looming SPEED; LPLC2 encodes angular SIZE** | Ache et al. 2019 | split, fitted to 2 targets | **pass** |
 | LC4:LPLC2 synapse ratio onto GF | 1.79 (Ache et al.) | 1.32 | **consistent** |
-| escape direction is away from the threat | established | neural, equalised: 16/16 away, mean dot 0.88; raw wiring 9/11, 0.59 (`--neural-heading`) | **pass, coarse; weak on raw** |
+| escape direction is away from the threat | established | neural side decode, first takeoffs: side correct 8/8 equalised, 6/6 raw, mean dot 0.70; the earlier 0.88 was inflated by laundered geometric fallback, and the fallback still exists (`--neural-heading`) | **partial** |
 | same-side jump muscle leads the escape | anatomy is ipsilateral | 15/16 on equalised wiring, after the mirror fix | **pass** |
 | direction is set by pre-takeoff leg posture | established | absent, and out of reach | **out of scope** |
 
@@ -1268,6 +1268,71 @@ the checks they cannot run, out loud.
 **The remaining assumption** is that the dataset's `side == "R"` means the fly's own right
 (`neuprint_source.py:593`). That is the standard neuPrint convention, but it is taken on
 trust rather than checked here.
+
+### Mid-flight re-aiming broke, and fixing it exposed an inflated accuracy figure
+
+**Reported by Ranuja, driving the model:** after the first takeoff, chasing the fly got no
+reaction, "even if it's up against the wall"; it only reacted again after landing.
+
+**Reproduced on the interactive path.** Pointer sweeps in, fly takes off, pointer chases at
+1.0 m/s -- faster than the 0.62 m/s cruise -- for 2 s:
+
+| decoder | redirects | distinct headings sent | turned |
+|---|---|---|---|
+| neural heading, as committed | 2-3 | **1** | **0 deg** |
+| geometric heading (reference) | 26-27 | 25-27 | ~1,100 deg |
+
+**Cause: the circle fix.** To stop the compounding 90-degree turn, the side reading was only
+cleared at takeoff, and a hold rule returned the stored heading whenever that stale side
+matched. Every mid-flight redirect sent the takeoff heading. The circle check passed the
+whole time, because a fly that never turns never circles.
+
+**Fix, stage 1: commit the neural heading at dispatch, not per spike.** Each takeoff or
+redirect reads the side and clears it. Chasing restored re-aiming immediately. But takeoff
+accuracy fell from 0.884 to 0.403, so the next step was to find out why.
+
+**The 0.884 was inflated.** This took two attempts, because the first diagnosis had its own
+errors:
+
+* The first per-takeoff table compared headings against `res.observation`, which is the
+  state *after* the environment has started the flight on the new heading. Every row read
+  "turned 0 deg".
+* The first fallback test used the same post-step positions with an exact-equality check,
+  so it reported "zero geometric fallback". That was withdrawn once the flaw was found.
+
+Measured against the observation the decoder actually decided on, the previous decoder's
+**later** takeoffs turned **134-169 deg** and scored 0.99 against "away". A decoder that only
+knows a side can only ever turn +/-90 deg. On the first spike of a burst, before any side was
+known, that decoder fell back to the geometric heading, and its hold rule kept it through to
+dispatch. Half of the 0.884 sample was coordinates, not neurons. The earlier numbers (K3's
+0.878, the scorecard's 0.88, and the messages of `4b6c74c` and `c1ab5ed`) all carry that
+inflation. **The honest neural figure is the first-takeoff one: side correct 8/8, mean dot
+0.70.**
+
+**Fix, stage 2: the side reading went stale.** With per-dispatch clearing, the side was
+latched on the first lead after a dispatch and survived landing. Later takeoffs read the
+**wrong side 3 times in 7**, using a side seen mid-flight. It is now a **decaying tally** of
+right-minus-left TTMn spikes (`side_time_constant_ms` 30, `side_evidence_threshold` 0.5,
+both invented and labelled). Old evidence fades on its own, and each dispatch uses up the
+tally.
+
+| after the tally, per takeoff | equalised | raw |
+|---|---|---|
+| first takeoffs: side correct / mean dot | 8/8, 0.700 | 6/6 (+2 fallbacks), 0.765 |
+| later takeoffs: side correct | 3/3 (+4 fallbacks) | 4/6 |
+| chase: distinct headings, turning | 22-25, 1,300-1,480 deg | -- |
+
+**Open, and not decided here:** when the tally holds no clear side, which happens when the
+threat is dead ahead or behind or the two sides fire alike, the decoder still **falls back to
+the geometric heading**. That reads the threat's coordinates, which contradicts what
+`--neural-heading` claims, and it inflates any average that does not exclude it. The
+fallback count is recorded, but no summary shows it. The alternatives are to keep the current
+course (neural-only, and sometimes toward a threat that is dead ahead) or to keep the
+fallback, clearly labelled. That is Ranuja's call.
+
+**Guarded:** `--check` now chases the fly mid-flight and requires at least two distinct
+redirect headings and 90 degrees of turning. It is the counterpart to the circle check:
+responsiveness as well as stability. Mutation-tested: freezing the heading after takeoff fails it at exactly the reported numbers -- 1 distinct redirect heading, 0 degrees turned. The geometric fallback count is now printed in every run's summary JSON as `neural_heading_fallbacks`.
 
 ### How a step is run
 

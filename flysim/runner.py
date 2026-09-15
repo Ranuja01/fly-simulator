@@ -436,6 +436,11 @@ class SimulationRunner:
             "takeoff_events": self.takeoff_events,
             "reattached_edges": self.reattached_edges,
             "edges_missing_heading": self.edges_missing_heading,
+            # Escapes that asked for a neural heading but got the GEOMETRIC one, because no
+            # side was clear. Counted inside the decoder all along and shown nowhere, which
+            # is how geometric headings came to inflate the neural accuracy figures unseen.
+            # None when the decoder has no neural heading at all.
+            "neural_heading_fallbacks": getattr(self.decoder, "neural_heading_misses", None),
             "final_distance_m": self.observation.distance,
             "first_spike_ms": first_spikes,
             "active_substeps": counts,

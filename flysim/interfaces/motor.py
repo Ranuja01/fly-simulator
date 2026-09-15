@@ -82,8 +82,8 @@ class GiantFiberDecoder(BaseMotorDecoder):
         self._last_takeoff_ms: float | None = None
         self._last_steer_ms: float | None = None
         self._flight_seen = False
-        self._lead_side = 0
-        self._last_used_side = 0
+        self._side_score = 0.0
+        self._side_last_ms = None
         self.neural_heading_misses = 0
 
     @property
@@ -109,13 +109,17 @@ class GiantFiberDecoder(BaseMotorDecoder):
         if self._flight.size and bool(state.spikes[self._flight].any()):
             self._flight_seen = True
 
-        # Which side's jump motor neuron fires first is the directional signal. Recorded
-        # before the heading is committed, because the commit happens on the same step.
-        if self._lead_side == 0 and (self._side_left.size or self._side_right.size):
-            left_now = bool(state.spikes[self._side_left].any())
-            right_now = bool(state.spikes[self._side_right].any())
-            if left_now != right_now:
-                self._lead_side = -1 if left_now else 1
+        # The directional signal: a DECAYING tally of right-minus-left jump motor neuron
+        # spikes. Recent evidence dominates and old evidence fades on its own, so nothing
+        # observed mid-flight survives a landing to steer the next takeoff -- which a latched
+        # "first side to fire" reading did. See _current_side.
+        if self._side_left.size or self._side_right.size:
+            if self._side_last_ms is not None:
+                self._side_score *= float(np.exp(
+                    -(state.t_ms - self._side_last_ms) / p.side_time_constant_ms))
+            self._side_last_ms = state.t_ms
+            self._side_score += (float(state.spikes[self._side_right].sum())
+                                 - float(state.spikes[self._side_left].sum()))
 
         if bool(state.spikes[self._trigger].any()):
             # A fresh command starts a fresh judgement about the wings, so a later escape
@@ -127,9 +131,11 @@ class GiantFiberDecoder(BaseMotorDecoder):
             self._pending_spike_ms = state.t_ms
             if self._first_spike_ms is None:
                 self._first_spike_ms = state.t_ms
-            # The escape direction is committed at the moment of the spike, using where
-            # the threat was then. A real fly cannot re-aim mid-jump either.
-            self._heading = self._escape_heading(obs)
+            # Geometric mode commits the direction at the spike, using where the threat was
+            # then. The neural heading is committed at DISPATCH instead -- see
+            # _neural_heading for why recomputing it on every spike cannot work.
+            if not p.neural_heading:
+                self._heading = self._escape_heading(obs)
 
         # --- Convert to a command ----------------------------------------------------
         # A spike commands a takeoff during the window
@@ -148,10 +154,10 @@ class GiantFiberDecoder(BaseMotorDecoder):
                     triggered_now = True
                     powered_now = self._powered()
                     self._dispatched_spike_ms = self._pending_spike_ms
-                    # Cleared after the heading has been committed and used, so a second
-                    # escape in the same episode reads its own side rather than inheriting
-                    # the first one's.
-                    self._lead_side = 0
+                    if p.neural_heading:
+                        self._heading = self._escape_heading(obs)
+                    # Consumed once used, so the same spikes cannot steer two dispatches.
+                    self._side_score = 0.0
                     self._last_takeoff_ms = state.t_ms
                     self._takeoff_count += 1
                 elif fresh and obs.escaped and self._can_steer(state.t_ms):
@@ -160,6 +166,14 @@ class GiantFiberDecoder(BaseMotorDecoder):
                     # responsive to a threat that keeps chasing it mid-flight.
                     redirect = True
                     self._dispatched_spike_ms = self._pending_spike_ms
+                    if p.neural_heading:
+                        # Re-aim from the side seen since the last dispatch. No side -- a threat
+                        # straight behind drives both eyes alike -- means hold the current
+                        # course rather than fall back to reading the threat's coordinates.
+                        decoded = self._neural_heading(obs)
+                        if decoded is not None:
+                            self._heading = decoded
+                        self._side_score = 0.0
                     self._last_steer_ms = state.t_ms
                     self._steer_count += 1
 
@@ -231,6 +245,19 @@ class GiantFiberDecoder(BaseMotorDecoder):
             return True
         return (t_ms - self._last_steer_ms) >= self._p.steer_refractory_ms
 
+    def _current_side(self) -> int:
+        """-1 if the left jump motor neuron has recently dominated, +1 the right, 0 neither.
+
+        Read from the decaying spike tally rather than a latch, so the answer always reflects
+        the last few tens of milliseconds and never a side from a previous flight.
+        """
+        threshold = self._p.side_evidence_threshold
+        if self._side_score >= threshold:
+            return 1
+        if self._side_score <= -threshold:
+            return -1
+        return 0
+
     def _neural_heading(self, obs: EnvObservation) -> np.ndarray | None:
         """Turn away from the side whose jump motor neuron fired first.
 
@@ -238,17 +265,33 @@ class GiantFiberDecoder(BaseMotorDecoder):
         read -- which is the whole point, and also why this is coarser than the geometric
         version: it knows a side, not a bearing.
         """
-        if self._lead_side == 0 or obs.agent_heading is None:
+        side = self._current_side()
+        if side == 0 or obs.agent_heading is None:
             return None
-        # Re-aim only when the threat CHANGES side. The decode is a fixed rotation away
-        # from the current body axis, so applying it again on every trigger spike during
-        # one flight turns the fly through 90 degrees over and over -- which traces a
-        # circle. Ranuja found it by driving the model: the fly could be steered into
-        # near-perfect loops. A real short-mode escape is ballistic, and nothing measured
-        # here supports re-aiming mid-flight from the same unchanged signal.
-        if self._lead_side == self._last_used_side and self._heading is not None:
-            return self._heading
-        self._last_used_side = self._lead_side
+        # Called only at a takeoff or redirect, with a side observed since the previous one.
+        # Two earlier versions got this wrong in opposite directions, both found by Ranuja
+        # driving the model:
+        #
+        # * Recomputed on EVERY giant-fiber spike, relative to the current body axis. The
+        #   90 degree rotation compounded through a flight and traced circles.
+        # * Then held for the whole flight whenever the side matched the last one used, with
+        #   the side only ever cleared at takeoff. Every mid-flight redirect sent the takeoff
+        #   heading: chased at 1.0 m/s, 2-3 redirects, ONE distinct heading, zero degrees of
+        #   turning, while the geometric heading re-aimed 25+ times in the same chase.
+        #
+        # * Then the side itself went stale: latched on the first lead after a dispatch and
+        #   only cleared by the next dispatch, it survived landing, and the next takeoff used a
+        #   side seen mid-flight. Later takeoffs read the wrong side 3 times in 7.
+        #
+        # And the number everything was judged by was inflated: the version before these
+        # fell back to the geometric heading on the first spike of a burst, before any side
+        # was known, and its hold rule then kept that geometric heading to dispatch. Later
+        # takeoffs turned 134-169 deg -- a side-only decode can only ever turn +/-90 -- and
+        # scored ~0.99 against "away". The honest neural figure is the first-takeoff one.
+        #
+        # Tying each re-aim to one dispatch and decaying evidence avoids all three: turns
+        # cannot compound faster than steer_refractory_ms allows, and a threat still on one
+        # side keeps being turned away from.
         # The same-side jump motor neuron leads, so the leading side is the side the threat
         # is on: turn the other way. Arena angles run counter-clockwise, so a turn to the
         # RIGHT is negative -- left leading (-1) must give heading - 90 degrees.
@@ -258,7 +301,7 @@ class GiantFiberDecoder(BaseMotorDecoder):
         # the threat because the mirrored encoder made the OPPOSITE jump muscle lead. The two
         # errors cancelled; fixing either alone sends the fly at the threat. They change
         # together, and --check now guards both.
-        angle = float(obs.agent_heading) + self._lead_side * np.deg2rad(
+        angle = float(obs.agent_heading) + side * np.deg2rad(
             self._p.neural_turn_deg
         )
         return np.array([np.cos(angle), np.sin(angle)], dtype=np.float64)

@@ -555,6 +555,17 @@ class DecoderParams:
     inventing precision the measurement does not have.
     """
 
+    side_time_constant_ms: float = 30.0
+    """Decay time constant of the right-minus-left jump motor neuron spike tally.
+
+    Invented. It sets how long evidence about which side the threat is on stays relevant.
+    Short enough that a side seen during a flight has faded by the time the fly lands and
+    takes off again; long enough to span the burst of spikes behind one takeoff."""
+
+    side_evidence_threshold: float = 0.5
+    """How lopsided the decayed tally must be before a side is read. Invented. 0.5 means
+    roughly one uncontested recent spike on one side."""
+
     neural_turn_deg: float = 90.0
     """How far from the body axis to turn, away from the side that fired first.
 
